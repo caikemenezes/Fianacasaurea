@@ -78,6 +78,7 @@ layout_rodape($usuario_atual);
       <option value="FIXA">Conta fixa</option>
       <option value="VARIAVEL">Conta variável</option>
     </select>
+    <input name="numero_parcelas" placeholder="Nº de parcelas (opcional, ex: financiamento)" type="number" min="1" class="campo">
     <input name="observacoes" placeholder="Observações (opcional)" class="campo">
     <label class="campo-checkbox"><input type="checkbox" name="recorrente_mensal" checked> Recorrente todo mês</label>
     <button type="submit" class="botao">Adicionar conta</button>
@@ -93,16 +94,38 @@ layout_rodape($usuario_atual);
     <?php endforeach; ?>
   </div>
 
+  <?php foreach ($contasFiltradas as $conta): if ($conta['numero_parcelas'] === null) continue; $formId = 'conta-form-' . (int) $conta['id']; ?>
+    <form id="<?= $formId ?>" method="post" action="/contas-processar.php" style="display:none">
+      <?= csrf_campo_oculto($usuario_atual) ?>
+      <input type="hidden" name="acao" value="editar_parcelas">
+      <input type="hidden" name="id" value="<?= (int) $conta['id'] ?>">
+    </form>
+  <?php endforeach; ?>
+
   <div class="tabela-wrap">
     <table class="tabela">
-      <thead><tr><th>Nome</th><th>Categoria</th><th>Valor</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Categoria</th><th>Valor</th><th>Parcelas</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        <?php foreach ($contasFiltradas as $conta): $status = $conta['status_exibido']; ?>
+        <?php foreach ($contasFiltradas as $conta): $status = $conta['status_exibido']; $formId = 'conta-form-' . (int) $conta['id']; ?>
           <tr>
             <td><?= htmlspecialchars($conta['nome'], ENT_QUOTES, 'UTF-8') ?></td>
             <td class="texto-suave"><?= htmlspecialchars($conta['categoria'], ENT_QUOTES, 'UTF-8') ?></td>
             <td><?= formatar_moeda((float) $conta['valor']) ?></td>
-            <td><?= formatar_data($conta['vencimento']) ?></td>
+            <td>
+              <?php if ($conta['numero_parcelas'] !== null): ?>
+                <input form="<?= $formId ?>" name="parcelas_pagas" type="number" min="0" max="<?= (int) $conta['numero_parcelas'] ?>" value="<?= (int) $conta['parcelas_pagas'] ?>" class="campo campo-tabela" style="width:4rem">
+                <span class="texto-suave">/<?= (int) $conta['numero_parcelas'] ?></span>
+              <?php else: ?>
+                <span class="texto-suave">—</span>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if ($conta['numero_parcelas'] !== null): ?>
+                <input form="<?= $formId ?>" name="vencimento" type="date" value="<?= $conta['vencimento'] ?>" class="campo campo-tabela">
+              <?php else: ?>
+                <?= formatar_data($conta['vencimento']) ?>
+              <?php endif; ?>
+            </td>
             <td>
               <form method="post" action="/contas-processar.php" style="display:inline">
                 <?= csrf_campo_oculto($usuario_atual) ?>
@@ -126,7 +149,7 @@ layout_rodape($usuario_atual);
           </tr>
         <?php endforeach; ?>
         <?php if (count($contasFiltradas) === 0): ?>
-          <tr><td colspan="6" class="tabela-vazia"><?= count($contas) === 0 ? 'Nenhuma conta cadastrada ainda.' : 'Nenhuma conta nesse filtro.' ?></td></tr>
+          <tr><td colspan="7" class="tabela-vazia"><?= count($contas) === 0 ? 'Nenhuma conta cadastrada ainda.' : 'Nenhuma conta nesse filtro.' ?></td></tr>
         <?php endif; ?>
       </tbody>
     </table>
@@ -166,6 +189,8 @@ layout_rodape($usuario_atual);
     <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round(max($saldoEmCaixa, 0) / $maiorValor * 100)) ?>%"></div></div>
   </div>
 </div>
+
+<script src="/assets/contas-planilha.js"></script>
 
 <?php
 fechar_layout();

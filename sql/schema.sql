@@ -95,6 +95,8 @@ CREATE TABLE conta_mes (
     conta_bancaria VARCHAR(120) NULL,
     tipo ENUM('FIXA','VARIAVEL') NOT NULL DEFAULT 'FIXA',
     recorrente_mensal TINYINT(1) NOT NULL DEFAULT 1,
+    numero_parcelas INT NULL,
+    parcelas_pagas INT NOT NULL DEFAULT 0,
     status ENUM('PENDENTE','ATRASADA','PAGA') NOT NULL DEFAULT 'PENDENTE',
     paga_em DATE NULL,
     observacoes VARCHAR(500) NULL,

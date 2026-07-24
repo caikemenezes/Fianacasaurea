@@ -54,24 +54,48 @@ if ($acao === 'criar') {
         $stmt->execute([$proximoStatus, $id, $familiaId]);
     }
 } elseif ($acao === 'editar') {
-    // Planilha: cada campo salva sozinho ao perder o foco (ver dividas-planilha.js).
-    // Só grava os valores digitados — não mexe no status, que é controlado
-    // à parte pelo ciclo manual do selo (alternar_status).
+    // Planilha: cada campo salva sozinho ao perder o foco (ver dividas-planilha.js),
+    // mas o form da linha inteira é reenviado a cada vez — não dá pra saber só
+    // pelo POST qual campo o usuário realmente mexeu. Por isso comparamos
+    // "parcelas_pagas" enviado com o valor já gravado no banco: se mudou, é
+    // sinal de que uma parcela foi paga (ou corrigida), e valor_atual/vencimento
+    // são recalculados automaticamente a partir da diferença — em vez de
+    // confiar no que veio no POST pra esses dois campos (que é só o valor que
+    // já estava na tela, não uma edição intencional).
     $id = (int) $_POST['id'];
-    $stmt = $pdo->prepare(
-        'UPDATE divida SET nome = ?, credor = ?, parcelas_pagas = ?, valor_atual = ?, valor_parcela = ?, vencimento = ?
-         WHERE id = ? AND familia_id = ?'
-    );
-    $stmt->execute([
-        (string) $_POST['nome'],
-        (string) $_POST['credor'],
-        max(0, (int) ($_POST['parcelas_pagas'] ?? 0)),
-        max(0, parse_valor($_POST['valor_atual'] ?? null)),
-        parse_valor_ou_null($_POST['valor_parcela'] ?? null),
-        data_ou_null($_POST['vencimento'] ?? null),
-        $id,
-        $familiaId,
-    ]);
+
+    $stmt = $pdo->prepare('SELECT parcelas_pagas, valor_atual, valor_parcela, vencimento FROM divida WHERE id = ? AND familia_id = ?');
+    $stmt->execute([$id, $familiaId]);
+    $atual = $stmt->fetch();
+
+    if ($atual !== false) {
+        $novasParcelasPagas = max(0, (int) ($_POST['parcelas_pagas'] ?? 0));
+        $delta = $novasParcelasPagas - (int) $atual['parcelas_pagas'];
+        $novoValorParcela = parse_valor_ou_null($_POST['valor_parcela'] ?? null) ?? (float) $atual['valor_parcela'];
+
+        if ($delta !== 0) {
+            $novoValorAtual = max(0, (float) $atual['valor_atual'] - ($delta * $novoValorParcela));
+            $novoVencimento = $atual['vencimento'] !== null ? somar_meses($atual['vencimento'], $delta) : data_ou_null($_POST['vencimento'] ?? null);
+        } else {
+            $novoValorAtual = max(0, parse_valor($_POST['valor_atual'] ?? null));
+            $novoVencimento = data_ou_null($_POST['vencimento'] ?? null);
+        }
+
+        $stmt = $pdo->prepare(
+            'UPDATE divida SET nome = ?, credor = ?, parcelas_pagas = ?, valor_atual = ?, valor_parcela = ?, vencimento = ?
+             WHERE id = ? AND familia_id = ?'
+        );
+        $stmt->execute([
+            (string) $_POST['nome'],
+            (string) $_POST['credor'],
+            $novasParcelasPagas,
+            $novoValorAtual,
+            $novoValorParcela,
+            $novoVencimento,
+            $id,
+            $familiaId,
+        ]);
+    }
 } elseif ($acao === 'excluir') {
     $stmt = $pdo->prepare('DELETE FROM divida WHERE id = ? AND familia_id = ?');
     $stmt->execute([(int) $_POST['id'], $familiaId]);

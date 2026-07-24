@@ -88,3 +88,14 @@ function redirecionar(string $destino): never
     header("Location: {$destino}");
     exit;
 }
+
+/**
+ * Soma (ou subtrai, se $meses for negativo) meses a uma data 'Y-m-d'. Usada
+ * pra avançar automaticamente o vencimento de dívidas/contas parceladas
+ * quando o número de parcelas pagas muda (ver dividas-processar.php e
+ * contas-processar.php, ação "editar"/"marcar_paga").
+ */
+function somar_meses(string $data, int $meses): string
+{
+    return (new DateTimeImmutable($data))->modify("{$meses} months")->format('Y-m-d');
+}
