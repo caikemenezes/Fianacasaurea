@@ -192,6 +192,7 @@ function fechar_layout(): void
   </script>
   <script src="/assets/graficos.js"></script>
   <script src="/assets/info-icone.js"></script>
+  <script src="/assets/mascara-moeda.js"></script>
 </body>
 </html>
 <?php

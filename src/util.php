@@ -18,13 +18,26 @@ function info_icone(string $texto): string
         . '</div>';
 }
 
-/** Equivalente a parseCurrencyInput do format.ts original: aceita "1234,56" ou "1234.56". */
+/**
+ * Equivalente a parseCurrencyInput do format.ts original, mas adaptado pro
+ * campo de valor ter ganhado máscara em 2026-07-24 (ver mascara-moeda.js):
+ * o valor chega como "10.000,00" (ponto = separador de milhar, vírgula =
+ * decimal), não mais como "1234.56" — remove os pontos antes de trocar a
+ * vírgula por ponto, senão "10.000,00" viraria 10.0 em vez de 10000.0.
+ */
 function parse_valor(mixed $valor): float
 {
     if ($valor === null || $valor === '') {
         return 0.0;
     }
-    return (float) str_replace(',', '.', (string) $valor);
+    $texto = str_replace('.', '', (string) $valor);
+    return (float) str_replace(',', '.', $texto);
+}
+
+/** Formata um valor pra pré-preencher um campo com data-moeda (ver mascara-moeda.js). */
+function formatar_valor_input(float $valor): string
+{
+    return number_format($valor, 2, ',', '.');
 }
 
 function parse_valor_ou_null(mixed $valor): ?float

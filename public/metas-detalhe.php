@@ -120,7 +120,7 @@ layout_rodape($usuario_atual);
       <input type="hidden" name="meta_id" value="<?= $id ?>">
       <input name="item" placeholder="Item (ex: Hospedagem)" required class="campo">
       <input name="fornecedor" placeholder="Fornecedor/opção (ex: Hotel X)" required class="campo">
-      <input name="valor" placeholder="Valor" type="number" step="0.01" required class="campo">
+      <input name="valor" placeholder="Valor" type="text" inputmode="decimal" data-moeda required class="campo">
       <input name="link" placeholder="Link (opcional)" class="campo">
       <button type="submit" class="botao botao-abrange-linha">Adicionar cotação</button>
     </form>
@@ -182,7 +182,7 @@ layout_rodape($usuario_atual);
       <input type="hidden" name="acao" value="adicionar_item">
       <input type="hidden" name="meta_id" value="<?= $id ?>">
       <input name="nome" placeholder="Item (ex: Passagem aérea)" required class="campo">
-      <input name="valor_estimado" placeholder="Valor estimado" type="number" step="0.01" required class="campo">
+      <input name="valor_estimado" placeholder="Valor estimado" type="text" inputmode="decimal" data-moeda required class="campo">
       <button type="submit" class="botao botao-abrange-linha">Adicionar item</button>
     </form>
 

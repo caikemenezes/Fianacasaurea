@@ -76,7 +76,7 @@ layout_rodape($usuario_atual);
           <option value="<?= htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8') ?></option>
         <?php endforeach; ?>
       </select>
-      <input name="valor_estimado" placeholder="Valor estimado" type="number" step="0.01" required class="campo">
+      <input name="valor_estimado" placeholder="Valor estimado" type="text" inputmode="decimal" data-moeda required class="campo">
       <input name="data_desejada" type="date" class="campo">
       <select name="prioridade" class="campo">
         <option value="URGENTE">Urgente</option>
@@ -143,7 +143,7 @@ layout_rodape($usuario_atual);
             <?= csrf_campo_oculto($usuario_atual) ?>
             <input type="hidden" name="acao" value="aportar">
             <input type="hidden" name="id" value="<?= (int) $meta['id'] ?>">
-            <input name="valor_aporte" type="number" step="0.01" placeholder="Valor a guardar agora" required class="campo" style="width:12rem">
+            <input name="valor_aporte" type="text" inputmode="decimal" data-moeda placeholder="Valor a guardar agora" required class="campo" style="width:12rem">
             <button class="botao botao-pequeno">Reservar valor</button>
           </form>
         <?php endif; ?>

@@ -46,8 +46,8 @@ layout_rodape($usuario_atual);
     </select>
     <input name="instituicao" placeholder="Instituição (opcional)" class="campo">
     <input name="tipo" placeholder="Tipo (ex: CDB, Tesouro, Poupança)" class="campo">
-    <input name="valor_aplicado" placeholder="Valor aplicado" type="number" step="0.01" required class="campo">
-    <input name="aporte_mensal" placeholder="Aporte mensal planejado (opcional)" type="number" step="0.01" class="campo">
+    <input name="valor_aplicado" placeholder="Valor aplicado" type="text" inputmode="decimal" data-moeda required class="campo">
+    <input name="aporte_mensal" placeholder="Aporte mensal planejado (opcional)" type="text" inputmode="decimal" data-moeda class="campo">
     <input name="prazo" type="date" class="campo" title="Prazo (opcional)">
     <input name="liquidez" placeholder="Liquidez (ex: imediata, 30 dias)" class="campo">
     <input name="rentabilidade_informada" placeholder="Rentabilidade informada (ex: 110% do CDI)" class="campo">
@@ -75,7 +75,7 @@ layout_rodape($usuario_atual);
                 <?= csrf_campo_oculto($usuario_atual) ?>
                 <input type="hidden" name="acao" value="aportar">
                 <input type="hidden" name="id" value="<?= (int) $inv['id'] ?>">
-                <input name="valor_aporte" type="number" step="0.01" placeholder="Valor do aporte" required class="campo" style="width:9rem">
+                <input name="valor_aporte" type="text" inputmode="decimal" data-moeda placeholder="Valor do aporte" required class="campo" style="width:9rem">
                 <button class="botao botao-pequeno">Registrar aporte</button>
               </form>
             </td>

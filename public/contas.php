@@ -35,8 +35,11 @@ $contas = array_map(static function (array $conta): array {
 // Pra conta parcelada (numero_parcelas preenchido), "valor" é o total
 // financiado, não o que vence este mês — quem representa isso é
 // valor_parcela. Contas normais (sem parcelamento) continuam usando "valor".
-$valorMensalDaConta = static fn(array $c): float => $c['numero_parcelas'] !== null && $c['valor_parcela'] !== null
-    ? (float) $c['valor_parcela']
+// Enquanto valor_parcela não for preenchido numa conta parcelada, conta como
+// 0 (nunca o total) — senão um financiamento de 60 mil aparece inteiro como
+// "falta pagar este mês" só porque a parcela ainda não foi cadastrada.
+$valorMensalDaConta = static fn(array $c): float => $c['numero_parcelas'] !== null
+    ? (float) ($c['valor_parcela'] ?? 0)
     : (float) $c['valor'];
 
 $totalPendente = array_sum(array_map($valorMensalDaConta, array_filter($contas, fn($c) => $c['status_exibido'] === 'PENDENTE')));
@@ -77,7 +80,7 @@ layout_rodape($usuario_atual);
       <?php endforeach; ?>
     </select>
     <input name="subcategoria" placeholder="Subcategoria (opcional)" class="campo">
-    <input name="valor" placeholder="Valor (total, se parcelado; senão valor mensal)" type="number" step="0.01" required class="campo">
+    <input name="valor" placeholder="Valor (total, se parcelado; senão valor mensal)" type="text" inputmode="decimal" data-moeda required class="campo">
     <input name="vencimento" type="date" required class="campo">
     <input name="forma_pagamento" placeholder="Forma de pagamento" class="campo">
     <input name="conta_bancaria" placeholder="Conta bancária ou cartão" class="campo">
@@ -86,7 +89,7 @@ layout_rodape($usuario_atual);
       <option value="VARIAVEL">Conta variável</option>
     </select>
     <input name="numero_parcelas" placeholder="Nº de parcelas (opcional, ex: financiamento)" type="number" min="1" class="campo">
-    <input name="valor_parcela" placeholder="Valor da parcela (se for parcelado)" type="number" step="0.01" class="campo">
+    <input name="valor_parcela" placeholder="Valor da parcela (se for parcelado)" type="text" inputmode="decimal" data-moeda class="campo">
     <input name="observacoes" placeholder="Observações (opcional)" class="campo">
     <label class="campo-checkbox"><input type="checkbox" name="recorrente_mensal" checked> Recorrente todo mês</label>
     <button type="submit" class="botao">Adicionar conta</button>
@@ -133,7 +136,7 @@ layout_rodape($usuario_atual);
             </td>
             <td>
               <?php if ($parcelado): ?>
-                <input form="<?= $formId ?>" name="valor_parcela" type="number" step="0.01" min="0" value="<?= $conta['valor_parcela'] !== null ? (float) $conta['valor_parcela'] : '' ?>" class="campo campo-tabela" style="width:7rem">
+                <input form="<?= $formId ?>" name="valor_parcela" type="text" inputmode="decimal" data-moeda value="<?= $conta['valor_parcela'] !== null ? formatar_valor_input((float) $conta['valor_parcela']) : '' ?>" class="campo campo-tabela" style="width:7rem">
               <?php else: ?>
                 <span class="texto-suave">—</span>
               <?php endif; ?>

@@ -61,7 +61,7 @@ layout_rodape($usuario_atual);
       <option value="MEDIA" selected>Média</option>
       <option value="BAIXA">Baixa</option>
     </select>
-    <input name="valor_estimado" placeholder="Valor estimado" type="number" step="0.01" required class="campo">
+    <input name="valor_estimado" placeholder="Valor estimado" type="text" inputmode="decimal" data-moeda required class="campo">
     <input name="mes_planejado" type="date" required class="campo">
     <button type="submit" class="botao botao-abrange-linha">Adicionar prioridade</button>
   </form>
@@ -109,7 +109,7 @@ layout_rodape($usuario_atual);
             <?= csrf_campo_oculto($usuario_atual) ?>
             <input type="hidden" name="acao" value="aportar">
             <input type="hidden" name="id" value="<?= (int) $item['id'] ?>">
-            <input name="valor_aporte" type="number" step="0.01" placeholder="Valor a guardar agora" required class="campo" style="width:12rem">
+            <input name="valor_aporte" type="text" inputmode="decimal" data-moeda placeholder="Valor a guardar agora" required class="campo" style="width:12rem">
             <button class="botao botao-pequeno">Reservar valor</button>
           </form>
         <?php endif; ?>

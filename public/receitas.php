@@ -40,7 +40,7 @@ layout_rodape($usuario_atual);
         <option value="<?= htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8') ?></option>
       <?php endforeach; ?>
     </select>
-    <input name="valor_previsto" placeholder="Valor previsto" type="number" step="0.01" required class="campo">
+    <input name="valor_previsto" placeholder="Valor previsto" type="text" inputmode="decimal" data-moeda required class="campo">
     <input name="data_prevista" type="date" required class="campo">
     <input name="categoria" placeholder="Categoria (opcional)" class="campo">
     <input name="conta_bancaria" placeholder="Conta bancária (opcional)" class="campo">

@@ -56,9 +56,9 @@ layout_rodape($usuario_atual);
         <option value="<?= htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8') ?>"><?= htmlspecialchars($tipo, ENT_QUOTES, 'UTF-8') ?></option>
       <?php endforeach; ?>
     </select>
-    <input name="valor_original" placeholder="Valor original" type="number" step="0.01" required class="campo">
+    <input name="valor_original" placeholder="Valor original" type="text" inputmode="decimal" data-moeda required class="campo">
     <input name="numero_parcelas" placeholder="Nº de parcelas (opcional)" type="number" min="1" class="campo">
-    <input name="valor_parcela" placeholder="Valor da parcela (opcional)" type="number" step="0.01" class="campo">
+    <input name="valor_parcela" placeholder="Valor da parcela (opcional)" type="text" inputmode="decimal" data-moeda class="campo">
     <input name="vencimento" type="date" class="campo">
     <select name="prioridade" class="campo">
       <option value="URGENTE">Urgente</option>
@@ -101,8 +101,8 @@ layout_rodape($usuario_atual);
               <div class="texto-suave" style="font-size:0.75rem;margin-top:0.15rem">pago: <?= formatar_moeda($valorPagoDivida) ?></div>
               <div class="progresso-trilho" style="margin-top:0.25rem"><div class="progresso-barra" style="width: <?= $progressoDivida ?>%"></div></div>
             </td>
-            <td><input form="<?= $formId ?>" name="valor_atual" type="number" step="0.01" min="0" value="<?= (float) $divida['valor_atual'] ?>" class="campo campo-tabela" style="width:7rem"></td>
-            <td><input form="<?= $formId ?>" name="valor_parcela" type="number" step="0.01" min="0" value="<?= $divida['valor_parcela'] !== null ? (float) $divida['valor_parcela'] : '' ?>" class="campo campo-tabela" style="width:7rem"></td>
+            <td><input form="<?= $formId ?>" name="valor_atual" type="text" inputmode="decimal" data-moeda value="<?= formatar_valor_input((float) $divida['valor_atual']) ?>" class="campo campo-tabela" style="width:7rem"></td>
+            <td><input form="<?= $formId ?>" name="valor_parcela" type="text" inputmode="decimal" data-moeda value="<?= $divida['valor_parcela'] !== null ? formatar_valor_input((float) $divida['valor_parcela']) : '' ?>" class="campo campo-tabela" style="width:7rem"></td>
             <td><input form="<?= $formId ?>" name="vencimento" type="date" value="<?= $divida['vencimento'] ?? '' ?>" class="campo campo-tabela"></td>
             <td>
               <form method="post" action="/dividas-processar.php" style="display:inline">
