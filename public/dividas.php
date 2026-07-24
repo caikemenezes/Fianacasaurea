@@ -80,15 +80,26 @@ layout_rodape($usuario_atual);
 
   <div class="tabela-wrap">
     <table class="tabela">
-      <thead><tr><th>Nome</th><th>Credor</th><th>Parcelas pagas</th><th>Valor atual</th><th>Valor da parcela</th><th>Próximo vencimento</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Credor</th><th>Parcelas pagas</th><th>Valor original</th><th>Valor atual</th><th>Valor da parcela</th><th>Próximo vencimento</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        <?php foreach ($dividas as $divida): $status = $divida['status_exibido']; $formId = 'divida-form-' . (int) $divida['id']; ?>
+        <?php foreach ($dividas as $divida):
+          $status = $divida['status_exibido'];
+          $formId = 'divida-form-' . (int) $divida['id'];
+          $valorOriginal = (float) $divida['valor_original'];
+          $valorPagoDivida = max(0, $valorOriginal - (float) $divida['valor_atual']);
+          $progressoDivida = $valorOriginal > 0 ? min(100, (int) round($valorPagoDivida / $valorOriginal * 100)) : 0;
+        ?>
           <tr>
             <td><input form="<?= $formId ?>" name="nome" value="<?= htmlspecialchars($divida['nome'], ENT_QUOTES, 'UTF-8') ?>" required class="campo campo-tabela"></td>
             <td><input form="<?= $formId ?>" name="credor" value="<?= htmlspecialchars($divida['credor'], ENT_QUOTES, 'UTF-8') ?>" required class="campo campo-tabela"></td>
             <td>
               <input form="<?= $formId ?>" name="parcelas_pagas" type="number" min="0" value="<?= (int) $divida['parcelas_pagas'] ?>" class="campo campo-tabela" style="width:4rem">
               <?php if ($divida['numero_parcelas']): ?><span class="texto-suave">/<?= (int) $divida['numero_parcelas'] ?></span><?php endif; ?>
+            </td>
+            <td>
+              <?= formatar_moeda($valorOriginal) ?>
+              <div class="texto-suave" style="font-size:0.75rem;margin-top:0.15rem">pago: <?= formatar_moeda($valorPagoDivida) ?></div>
+              <div class="progresso-trilho" style="margin-top:0.25rem"><div class="progresso-barra" style="width: <?= $progressoDivida ?>%"></div></div>
             </td>
             <td><input form="<?= $formId ?>" name="valor_atual" type="number" step="0.01" min="0" value="<?= (float) $divida['valor_atual'] ?>" class="campo campo-tabela" style="width:7rem"></td>
             <td><input form="<?= $formId ?>" name="valor_parcela" type="number" step="0.01" min="0" value="<?= $divida['valor_parcela'] !== null ? (float) $divida['valor_parcela'] : '' ?>" class="campo campo-tabela" style="width:7rem"></td>
@@ -116,7 +127,7 @@ layout_rodape($usuario_atual);
           </tr>
         <?php endforeach; ?>
         <?php if (count($dividas) === 0): ?>
-          <tr><td colspan="8" class="tabela-vazia">Nenhuma dívida cadastrada.</td></tr>
+          <tr><td colspan="9" class="tabela-vazia">Nenhuma dívida cadastrada.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>

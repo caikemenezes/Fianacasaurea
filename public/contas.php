@@ -32,9 +32,16 @@ $contas = array_map(static function (array $conta): array {
     return $conta;
 }, $contasBrutas);
 
-$totalPendente = array_sum(array_column(array_filter($contas, fn($c) => $c['status_exibido'] === 'PENDENTE'), 'valor'));
-$totalAtrasado = array_sum(array_column(array_filter($contas, fn($c) => $c['status_exibido'] === 'ATRASADA'), 'valor'));
-$totalPago = array_sum(array_column(array_filter($contas, fn($c) => $c['status_exibido'] === 'PAGA'), 'valor'));
+// Pra conta parcelada (numero_parcelas preenchido), "valor" é o total
+// financiado, não o que vence este mês — quem representa isso é
+// valor_parcela. Contas normais (sem parcelamento) continuam usando "valor".
+$valorMensalDaConta = static fn(array $c): float => $c['numero_parcelas'] !== null && $c['valor_parcela'] !== null
+    ? (float) $c['valor_parcela']
+    : (float) $c['valor'];
+
+$totalPendente = array_sum(array_map($valorMensalDaConta, array_filter($contas, fn($c) => $c['status_exibido'] === 'PENDENTE')));
+$totalAtrasado = array_sum(array_map($valorMensalDaConta, array_filter($contas, fn($c) => $c['status_exibido'] === 'ATRASADA')));
+$totalPago = array_sum(array_map($valorMensalDaConta, array_filter($contas, fn($c) => $c['status_exibido'] === 'PAGA')));
 $totalAPagar = $totalPendente + $totalAtrasado;
 
 $resumoMes = resumo_do_mes($pdo, $familiaId, date('Y-m'));
@@ -70,7 +77,7 @@ layout_rodape($usuario_atual);
       <?php endforeach; ?>
     </select>
     <input name="subcategoria" placeholder="Subcategoria (opcional)" class="campo">
-    <input name="valor" placeholder="Valor" type="number" step="0.01" required class="campo">
+    <input name="valor" placeholder="Valor (total, se parcelado; senão valor mensal)" type="number" step="0.01" required class="campo">
     <input name="vencimento" type="date" required class="campo">
     <input name="forma_pagamento" placeholder="Forma de pagamento" class="campo">
     <input name="conta_bancaria" placeholder="Conta bancária ou cartão" class="campo">
@@ -79,6 +86,7 @@ layout_rodape($usuario_atual);
       <option value="VARIAVEL">Conta variável</option>
     </select>
     <input name="numero_parcelas" placeholder="Nº de parcelas (opcional, ex: financiamento)" type="number" min="1" class="campo">
+    <input name="valor_parcela" placeholder="Valor da parcela (se for parcelado)" type="number" step="0.01" class="campo">
     <input name="observacoes" placeholder="Observações (opcional)" class="campo">
     <label class="campo-checkbox"><input type="checkbox" name="recorrente_mensal" checked> Recorrente todo mês</label>
     <button type="submit" class="botao">Adicionar conta</button>
@@ -104,15 +112,34 @@ layout_rodape($usuario_atual);
 
   <div class="tabela-wrap">
     <table class="tabela">
-      <thead><tr><th>Nome</th><th>Categoria</th><th>Valor</th><th>Parcelas</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Categoria</th><th>Valor</th><th>Parcela</th><th>Parcelas</th><th>Vencimento</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        <?php foreach ($contasFiltradas as $conta): $status = $conta['status_exibido']; $formId = 'conta-form-' . (int) $conta['id']; ?>
+        <?php foreach ($contasFiltradas as $conta):
+          $status = $conta['status_exibido'];
+          $formId = 'conta-form-' . (int) $conta['id'];
+          $parcelado = $conta['numero_parcelas'] !== null;
+          $valorPago = $parcelado ? (int) $conta['parcelas_pagas'] * (float) ($conta['valor_parcela'] ?? 0) : null;
+          $progressoConta = $parcelado && (float) $conta['valor'] > 0 ? min(100, (int) round($valorPago / (float) $conta['valor'] * 100)) : null;
+        ?>
           <tr>
             <td><?= htmlspecialchars($conta['nome'], ENT_QUOTES, 'UTF-8') ?></td>
             <td class="texto-suave"><?= htmlspecialchars($conta['categoria'], ENT_QUOTES, 'UTF-8') ?></td>
-            <td><?= formatar_moeda((float) $conta['valor']) ?></td>
             <td>
-              <?php if ($conta['numero_parcelas'] !== null): ?>
+              <?= formatar_moeda((float) $conta['valor']) ?>
+              <?php if ($parcelado): ?>
+                <div class="texto-suave" style="font-size:0.75rem;margin-top:0.15rem">pago: <?= formatar_moeda($valorPago) ?></div>
+                <div class="progresso-trilho" style="margin-top:0.25rem"><div class="progresso-barra" style="width: <?= $progressoConta ?>%"></div></div>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if ($parcelado): ?>
+                <input form="<?= $formId ?>" name="valor_parcela" type="number" step="0.01" min="0" value="<?= $conta['valor_parcela'] !== null ? (float) $conta['valor_parcela'] : '' ?>" class="campo campo-tabela" style="width:7rem">
+              <?php else: ?>
+                <span class="texto-suave">—</span>
+              <?php endif; ?>
+            </td>
+            <td>
+              <?php if ($parcelado): ?>
                 <input form="<?= $formId ?>" name="parcelas_pagas" type="number" min="0" max="<?= (int) $conta['numero_parcelas'] ?>" value="<?= (int) $conta['parcelas_pagas'] ?>" class="campo campo-tabela" style="width:4rem">
                 <span class="texto-suave">/<?= (int) $conta['numero_parcelas'] ?></span>
               <?php else: ?>
@@ -120,7 +147,7 @@ layout_rodape($usuario_atual);
               <?php endif; ?>
             </td>
             <td>
-              <?php if ($conta['numero_parcelas'] !== null): ?>
+              <?php if ($parcelado): ?>
                 <input form="<?= $formId ?>" name="vencimento" type="date" value="<?= $conta['vencimento'] ?>" class="campo campo-tabela">
               <?php else: ?>
                 <?= formatar_data($conta['vencimento']) ?>
@@ -149,7 +176,7 @@ layout_rodape($usuario_atual);
           </tr>
         <?php endforeach; ?>
         <?php if (count($contasFiltradas) === 0): ?>
-          <tr><td colspan="7" class="tabela-vazia"><?= count($contas) === 0 ? 'Nenhuma conta cadastrada ainda.' : 'Nenhuma conta nesse filtro.' ?></td></tr>
+          <tr><td colspan="8" class="tabela-vazia"><?= count($contas) === 0 ? 'Nenhuma conta cadastrada ainda.' : 'Nenhuma conta nesse filtro.' ?></td></tr>
         <?php endif; ?>
       </tbody>
     </table>

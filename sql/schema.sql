@@ -96,6 +96,7 @@ CREATE TABLE conta_mes (
     tipo ENUM('FIXA','VARIAVEL') NOT NULL DEFAULT 'FIXA',
     recorrente_mensal TINYINT(1) NOT NULL DEFAULT 1,
     numero_parcelas INT NULL,
+    valor_parcela DECIMAL(12,2) NULL,
     parcelas_pagas INT NOT NULL DEFAULT 0,
     status ENUM('PENDENTE','ATRASADA','PAGA') NOT NULL DEFAULT 'PENDENTE',
     paga_em DATE NULL,

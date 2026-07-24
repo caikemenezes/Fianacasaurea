@@ -17,8 +17,8 @@ if ($acao === 'criar') {
     $numeroParcelas = texto_ou_null($_POST['numero_parcelas'] ?? null);
 
     $stmt = $pdo->prepare(
-        'INSERT INTO conta_mes (familia_id, nome, categoria, subcategoria, valor, vencimento, forma_pagamento, conta_bancaria, tipo, recorrente_mensal, numero_parcelas, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO conta_mes (familia_id, nome, categoria, subcategoria, valor, vencimento, forma_pagamento, conta_bancaria, tipo, recorrente_mensal, numero_parcelas, valor_parcela, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $familiaId,
@@ -32,6 +32,7 @@ if ($acao === 'criar') {
         ($_POST['tipo'] ?? '') === 'VARIAVEL' ? 'VARIAVEL' : 'FIXA',
         isset($_POST['recorrente_mensal']) ? 1 : 0,
         $numeroParcelas !== null ? (int) $numeroParcelas : null,
+        parse_valor_ou_null($_POST['valor_parcela'] ?? null),
         texto_ou_null($_POST['observacoes'] ?? null),
     ]);
 } elseif ($acao === 'editar_parcelas') {
@@ -39,7 +40,9 @@ if ($acao === 'criar') {
     // de Dívidas, comparamos "parcelas_pagas" enviado com o valor já gravado
     // pra saber se uma parcela foi paga/corrigida, e recalculamos o vencimento
     // automaticamente a partir da diferença — em vez de confiar no vencimento
-    // que veio no POST (que é só o que já estava na tela).
+    // que veio no POST (que é só o que já estava na tela). "valor" aqui é o
+    // total financiado (não muda por parcela), só valor_parcela pode ser
+    // corrigido direto (ex: parcela renegociada).
     $id = (int) $_POST['id'];
     $stmt = $pdo->prepare('SELECT parcelas_pagas, vencimento FROM conta_mes WHERE id = ? AND familia_id = ?');
     $stmt->execute([$id, $familiaId]);
@@ -51,9 +54,10 @@ if ($acao === 'criar') {
         $novoVencimento = $delta !== 0
             ? somar_meses($atual['vencimento'], $delta)
             : (string) $_POST['vencimento'];
+        $novoValorParcela = parse_valor_ou_null($_POST['valor_parcela'] ?? null);
 
-        $stmt = $pdo->prepare('UPDATE conta_mes SET parcelas_pagas = ?, vencimento = ? WHERE id = ? AND familia_id = ?');
-        $stmt->execute([$novasParcelasPagas, $novoVencimento, $id, $familiaId]);
+        $stmt = $pdo->prepare('UPDATE conta_mes SET parcelas_pagas = ?, vencimento = ?, valor_parcela = ? WHERE id = ? AND familia_id = ?');
+        $stmt->execute([$novasParcelasPagas, $novoVencimento, $novoValorParcela, $id, $familiaId]);
     }
 } elseif ($acao === 'marcar_paga') {
     // Ciclo manual completo: pendente -> atrasada -> paga -> pendente -> ...
