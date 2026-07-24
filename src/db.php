@@ -61,6 +61,17 @@ function conexao_banco(): PDO
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         PDO::ATTR_EMULATE_PREPARES => false,
+        /**
+         * Sem isso, a collation da conexão (collation_connection) fica no
+         * padrão do servidor MySQL, que pode divergir do utf8mb4_unicode_ci
+         * usado nas tabelas (schema.sql) — funções de data/string (ex:
+         * DATE_FORMAT) então retornam com uma collation diferente da tabela,
+         * e comparar isso com um parâmetro vira "Illegal mix of collations"
+         * (achado em produção na Hostinger, cujo servidor MySQL usa
+         * utf8mb4_general_ci como padrão; localmente não reproduzia porque
+         * o MySQL do Laragon usa outro padrão).
+         */
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
     ]);
 
     return $pdo;
