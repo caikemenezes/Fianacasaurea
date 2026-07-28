@@ -13,9 +13,10 @@ $stmt = $pdo->prepare('SELECT id, nome, email, criado_em FROM usuario WHERE fami
 $stmt->execute([$familiaId]);
 $membrosFamilia = $stmt->fetchAll();
 
-$stmt = $pdo->prepare('SELECT imap_email FROM familia WHERE id = ?');
+$stmt = $pdo->prepare('SELECT imap_email, saldo_inicial, saldo_inicial_data FROM familia WHERE id = ?');
 $stmt->execute([$familiaId]);
-$imapEmailAtual = $stmt->fetch()['imap_email'];
+$familiaAtual = $stmt->fetch();
+$imapEmailAtual = $familiaAtual['imap_email'];
 
 $erroSenha = $_GET['erro_senha'] ?? null;
 $sucessoSenha = $_GET['sucesso_senha'] ?? null;
@@ -23,6 +24,7 @@ $erroConvite = $_GET['erro_convite'] ?? null;
 $sucessoConvite = $_GET['sucesso_convite'] ?? null;
 $erroExtrato = $_GET['erro_extrato'] ?? null;
 $sucessoExtrato = $_GET['sucesso_extrato'] ?? null;
+$sucessoSaldo = $_GET['sucesso_saldo'] ?? null;
 
 layout_topo($usuario_atual, '', 'Configurações');
 layout_rodape($usuario_atual);
@@ -100,6 +102,26 @@ layout_rodape($usuario_atual);
       <input type="hidden" name="acao" value="salvar_extrato_gmail">
       <input name="imap_email" type="email" placeholder="E-mail do Gmail" required value="<?= htmlspecialchars((string) $imapEmailAtual, ENT_QUOTES, 'UTF-8') ?>" class="campo">
       <input name="imap_senha_app" type="password" placeholder="<?= $imapEmailAtual !== null && $imapEmailAtual !== '' ? 'Senha de app (deixe em branco pra manter a atual)' : 'Senha de app' ?>" class="campo">
+      <button type="submit" class="botao">Salvar</button>
+    </form>
+  </div>
+
+  <div class="cartao pilha-pequena">
+    <?= info_icone('Normalmente não precisa mexer aqui: o sistema já lê o saldo real da conta direto do extrato (arquivo OFX de cada e-mail, que o próprio Nubank informa) toda vez que "Verificar extrato" roda. Esse campo é só uma reserva pra quando ainda não tiver nenhum extrato processado — ex: primeiro uso do sistema, antes do primeiro "Verificar extrato".') ?>
+    <h2 class="cartao-titulo">Saldo inicial (reserva)</h2>
+    <p class="texto-suave" style="font-size:0.8rem;margin:0">
+      <?= (float) $familiaAtual['saldo_inicial'] !== 0.0
+        ? 'Atual: ' . formatar_moeda((float) $familiaAtual['saldo_inicial']) . ($familiaAtual['saldo_inicial_data'] !== null ? ' (em ' . formatar_data($familiaAtual['saldo_inicial_data']) . ')' : '')
+        : 'Ainda não configurado (considerando R$ 0,00 antes do extrato começar).' ?>
+    </p>
+
+    <?php if ($sucessoSaldo): ?><p class="texto-suave" style="color:var(--sucesso)"><?= htmlspecialchars($sucessoSaldo, ENT_QUOTES, 'UTF-8') ?></p><?php endif; ?>
+
+    <form method="post" action="/configuracoes-processar.php" class="form-grade">
+      <?= csrf_campo_oculto($usuario_atual) ?>
+      <input type="hidden" name="acao" value="salvar_saldo_inicial">
+      <input name="saldo_inicial" placeholder="Saldo inicial" type="text" inputmode="decimal" data-moeda value="<?= formatar_valor_input((float) $familiaAtual['saldo_inicial']) ?>" class="campo">
+      <input name="saldo_inicial_data" type="date" value="<?= htmlspecialchars((string) $familiaAtual['saldo_inicial_data'], ENT_QUOTES, 'UTF-8') ?>" class="campo">
       <button type="submit" class="botao">Salvar</button>
     </form>
   </div>

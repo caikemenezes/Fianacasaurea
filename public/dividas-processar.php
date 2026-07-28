@@ -18,8 +18,8 @@ if ($acao === 'criar') {
     $numeroParcelas = texto_ou_null($_POST['numero_parcelas'] ?? null);
 
     $stmt = $pdo->prepare(
-        'INSERT INTO divida (familia_id, nome, credor, tipo, valor_original, valor_atual, numero_parcelas, valor_parcela, vencimento, prioridade, possibilidade_negociacao)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO divida (familia_id, nome, credor, tipo, valor_original, valor_atual, numero_parcelas, valor_parcela, vencimento, prioridade, possibilidade_negociacao, identificador_extrato)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $familiaId,
@@ -33,6 +33,7 @@ if ($acao === 'criar') {
         data_ou_null($_POST['vencimento'] ?? null),
         in_array($_POST['prioridade'] ?? '', ['URGENTE', 'ALTA', 'MEDIA', 'BAIXA'], true) ? $_POST['prioridade'] : 'MEDIA',
         isset($_POST['possibilidade_negociacao']) ? 1 : 0,
+        texto_ou_null($_POST['identificador_extrato'] ?? null),
     ]);
 } elseif ($acao === 'alternar_status') {
     // Ciclo manual completo: pendente -> atrasada -> paga -> pendente -> ...

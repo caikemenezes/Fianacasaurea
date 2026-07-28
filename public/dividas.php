@@ -60,6 +60,7 @@ layout_rodape($usuario_atual);
     <input name="numero_parcelas" placeholder="Nº de parcelas (opcional)" type="number" min="1" class="campo">
     <input name="valor_parcela" placeholder="Valor da parcela (opcional)" type="text" inputmode="decimal" data-moeda class="campo">
     <input name="vencimento" type="date" class="campo">
+    <input name="identificador_extrato" placeholder="Palavra-chave no extrato (opcional)" class="campo">
     <select name="prioridade" class="campo">
       <option value="URGENTE">Urgente</option>
       <option value="ALTA">Alta</option>

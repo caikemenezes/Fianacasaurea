@@ -69,6 +69,14 @@ if ($acao === 'alterar_senha') {
     }
 
     redirecionar('/configuracoes.php?sucesso_extrato=' . urlencode('Credenciais do Gmail salvas.'));
+} elseif ($acao === 'salvar_saldo_inicial') {
+    $saldoInicial = parse_valor($_POST['saldo_inicial'] ?? null);
+    $saldoInicialData = data_ou_null($_POST['saldo_inicial_data'] ?? null);
+
+    $stmt = $pdo->prepare('UPDATE familia SET saldo_inicial = ?, saldo_inicial_data = ? WHERE id = ?');
+    $stmt->execute([$saldoInicial, $saldoInicialData, $familiaId]);
+
+    redirecionar('/configuracoes.php?sucesso_saldo=' . urlencode('Saldo inicial salvo.'));
 }
 
 redirecionar('/configuracoes.php');

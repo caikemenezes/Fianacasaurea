@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/charts.php'; // formatar_moeda() usada nos textos de alerta
+require_once __DIR__ . '/extrato.php'; // saldo_disponivel_ate() usada no resumo do mês
 
 /**
  * Todo cálculo do Dashboard, isolado por família (familia_id), no mesmo
@@ -92,6 +93,16 @@ function resumo_do_mes(PDO $pdo, int $familiaId, string $mesReferencia): array
     $stmt->execute([$familiaId]);
     $totalInvestimentos = (float) $stmt->fetch()['total'];
 
+    // "Saldo disponível": precisa bater com o extrato de verdade, não só com
+    // as Contas do Mês registradas — antes era renda_recebida - total_pago
+    // (só contas cadastradas), o que mostrava dinheiro como "disponível"
+    // mesmo já tendo sido gasto em compras do dia a dia (mercado, Uber) que
+    // nunca viram Conta do Mês. Cálculo real (saldo do banco lido do OFX de
+    // cada mês + extrato depois disso, com fallback pro saldo_inicial manual
+    // se não tiver OFX ainda) centralizado em saldo_disponivel_ate(),
+    // ver src/extrato.php — reaproveitado também em receitas.php.
+    $saldoDisponivel = saldo_disponivel_ate($pdo, $familiaId, $mesReferencia);
+
     $rendaPrevista = (float) $receitas['renda_prevista'];
     $rendaRecebida = (float) $receitas['renda_recebida'];
     $totalContas = (float) $contas['total_contas'];
@@ -111,7 +122,7 @@ function resumo_do_mes(PDO $pdo, int $familiaId, string $mesReferencia): array
         'total_prioridades' => $totalPrioridades,
         'total_dividas' => $totalDividas,
         'total_investimentos' => $totalInvestimentos,
-        'saldo_disponivel' => $rendaRecebida - $totalPago,
+        'saldo_disponivel' => $saldoDisponivel,
         'saldo_previsto_fim_mes' => $rendaPrevista - $totalContas,
     ];
 }

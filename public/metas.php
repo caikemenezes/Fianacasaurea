@@ -91,6 +91,7 @@ layout_rodape($usuario_atual);
         <?php endforeach; ?>
       </select>
       <input name="categoria" placeholder="Categoria (opcional)" class="campo">
+      <input name="identificador_extrato" placeholder="Palavra-chave no extrato (opcional, ex: CARRO)" class="campo">
       <input name="links_pesquisados" placeholder="Links/orçamentos pesquisados (opcional)" class="campo">
       <button type="submit" class="botao">Adicionar meta</button>
     </form>

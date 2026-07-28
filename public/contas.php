@@ -350,7 +350,7 @@ layout_rodape($usuario_atual);
 
   <details class="cartao pilha-pequena secao-recolhivel">
     <summary>Extrato bancário automático</summary>
-    <?= info_icone('Procura no Gmail todos os e-mails de "Extrato" e lê o CSV anexado do Nubank. Casa automaticamente cada gasto com uma conta já cadastrada (por palavra-chave ou valor) e, se o mesmo beneficiário pagar por Pix em 3 meses ou mais sem bater com nenhuma conta, cria a conta fixa sozinho. O que sobrar sem reconhecer aparece em "Gastos variáveis do extrato", pra você vincular manualmente ou ignorar.') ?>
+    <?= info_icone('Procura no Gmail todos os e-mails de "Extrato" e lê o CSV anexado do Nubank. Casa automaticamente cada gasto com uma conta já cadastrada (por palavra-chave ou valor) e, se o mesmo beneficiário pagar por Pix em 3 meses ou mais sem bater com nenhuma conta, cria a conta fixa sozinho. Toda entrada de dinheiro que não bater com uma Receita prevista já cadastrada vira uma Receita nova automaticamente (recebida). O que sobrar sem reconhecer aparece em "Gastos variáveis do extrato", pra você vincular manualmente ou ignorar.') ?>
     <form method="post" action="/extrato-processar.php">
       <?= csrf_campo_oculto($usuario_atual) ?>
       <input type="hidden" name="acao" value="verificar">
@@ -362,13 +362,17 @@ layout_rodape($usuario_atual);
     <?php elseif (isset($_GET['novas'])):
       $fixasCriadas = (int) ($_GET['fixas_criadas'] ?? 0);
       $fixasTransacoes = (int) ($_GET['fixas_transacoes'] ?? 0);
-      $aindaPendente = (int) $_GET['novas'] - (int) $_GET['casadas'] - $fixasTransacoes;
+      $receitasCriadas = (int) ($_GET['receitas_criadas'] ?? 0);
+      $aindaPendente = (int) $_GET['novas'] - (int) $_GET['casadas'] - $fixasTransacoes - $receitasCriadas;
     ?>
       <p class="texto-suave">
         Encontradas <strong><?= (int) $_GET['novas'] ?></strong> transações novas —
         <strong><?= (int) $_GET['casadas'] ?></strong> casadas automaticamente,
         <?php if ($fixasCriadas > 0): ?>
           <strong><?= $fixasCriadas ?></strong> conta<?= $fixasCriadas > 1 ? 's fixas novas reconhecidas' : ' fixa nova reconhecida' ?> sozinho,
+        <?php endif; ?>
+        <?php if ($receitasCriadas > 0): ?>
+          <strong><?= $receitasCriadas ?></strong> receita<?= $receitasCriadas > 1 ? 's novas lançadas' : ' nova lançada' ?>,
         <?php endif; ?>
         <strong><?= max(0, $aindaPendente) ?></strong> em "Gastos variáveis do extrato" aguardando você.
       </p>

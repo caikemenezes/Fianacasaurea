@@ -35,8 +35,10 @@ function credenciais_gmail_da_familia(PDO $pdo, int $familiaId): ?array
  * Conecta no Gmail via IMAP com a credencial informada (e-mail + "Senha de
  * app" do Google, não a senha normal da conta) e busca TODOS os e-mails do
  * Nubank com "Extrato" no assunto (não só o mais recente — a família pode ter
- * um e-mail de extrato por mês acumulado desde janeiro). Retorna a lista de
- * CSVs anexados (texto cru), um por e-mail encontrado.
+ * um e-mail de extrato por mês acumulado desde janeiro). Retorna um array por
+ * e-mail encontrado, cada um com ['csv' => texto cru, 'ofx' => texto cru ou
+ * null] — o OFX é usado só pra ler o saldo real da conta (LEDGERBAL), o CSV
+ * continua sendo a fonte das transações.
  */
 function baixar_csvs_extrato_gmail(string $email, string $senha): array
 {
@@ -65,39 +67,80 @@ function baixar_csvs_extrato_gmail(string $email, string $senha): array
         }
         sort($ids);
 
-        $csvs = [];
+        $anexos = [];
         foreach ($ids as $id) {
             $estrutura = imap_fetchstructure($conexao, $id);
-            $numeroParteCsv = localizar_parte_csv($estrutura);
+            $numeroParteCsv = localizar_parte_por_subtipo($estrutura, 'CSV');
             if ($numeroParteCsv === null) {
                 continue; // e-mail sem anexo CSV, pula
             }
-            $conteudo = imap_fetchbody($conexao, $id, $numeroParteCsv);
-            $csvs[] = base64_decode($conteudo);
+            $csv = base64_decode(imap_fetchbody($conexao, $id, $numeroParteCsv));
+
+            $numeroParteOfx = localizar_parte_por_extensao($estrutura, '.ofx');
+            $ofx = $numeroParteOfx !== null ? base64_decode(imap_fetchbody($conexao, $id, $numeroParteOfx)) : null;
+
+            $anexos[] = ['csv' => $csv, 'ofx' => $ofx];
         }
-        return $csvs;
+        return $anexos;
     } finally {
         imap_close($conexao);
     }
 }
 
-/** Acha o número da parte MIME do anexo CSV, percorrendo a estrutura (pode ter subpartes aninhadas). */
-function localizar_parte_csv(object $estrutura, string $prefixo = ''): ?string
+/** Acha o número da parte MIME com o subtipo informado (ex: "CSV"), percorrendo a estrutura (pode ter subpartes aninhadas). */
+function localizar_parte_por_subtipo(object $estrutura, string $subtipo, string $prefixo = ''): ?string
 {
     if (!isset($estrutura->parts) || count($estrutura->parts) === 0) {
-        return ($estrutura->subtype ?? '') === 'CSV' ? ($prefixo !== '' ? $prefixo : '1') : null;
+        return ($estrutura->subtype ?? '') === $subtipo ? ($prefixo !== '' ? $prefixo : '1') : null;
     }
 
     foreach ($estrutura->parts as $i => $parte) {
         $numero = $prefixo . ($i + 1);
         if (isset($parte->parts) && count($parte->parts) > 0) {
-            $achado = localizar_parte_csv($parte, $numero . '.');
+            $achado = localizar_parte_por_subtipo($parte, $subtipo, $numero . '.');
             if ($achado !== null) return $achado;
-        } elseif (($parte->subtype ?? '') === 'CSV') {
+        } elseif (($parte->subtype ?? '') === $subtipo) {
             return $numero;
         }
     }
     return null;
+}
+
+/**
+ * Acha o número da parte MIME cujo nome de arquivo termina com a extensão
+ * informada (ex: ".ofx") — usado pro anexo OFX, cujo subtipo MIME é o
+ * genérico "OCTET-STREAM" (não dá pra achar só pelo subtipo como no CSV).
+ */
+function localizar_parte_por_extensao(object $estrutura, string $extensao, string $prefixo = ''): ?string
+{
+    if (!isset($estrutura->parts) || count($estrutura->parts) === 0) {
+        return str_ends_with(mb_strtolower(nome_do_anexo($estrutura)), $extensao) ? ($prefixo !== '' ? $prefixo : '1') : null;
+    }
+
+    foreach ($estrutura->parts as $i => $parte) {
+        $numero = $prefixo . ($i + 1);
+        if (isset($parte->parts) && count($parte->parts) > 0) {
+            $achado = localizar_parte_por_extensao($parte, $extensao, $numero . '.');
+            if ($achado !== null) return $achado;
+        } elseif (str_ends_with(mb_strtolower(nome_do_anexo($parte)), $extensao)) {
+            return $numero;
+        }
+    }
+    return null;
+}
+
+/** Nome do arquivo de uma parte MIME (procura em "dparameters" e "parameters", onde o c-client costuma colocar). */
+function nome_do_anexo(object $parte): string
+{
+    foreach (['dparameters', 'parameters'] as $campo) {
+        if (!isset($parte->$campo)) continue;
+        foreach ($parte->$campo as $p) {
+            if (in_array(mb_strtolower($p->attribute), ['filename', 'name'], true)) {
+                return $p->value;
+            }
+        }
+    }
+    return '';
 }
 
 /**
@@ -128,6 +171,93 @@ function interpretar_csv_extrato(string $csv): array
         ];
     }
     return $transacoes;
+}
+
+/**
+ * Lê o saldo real da conta no anexo OFX (formato bancário padrão) — o bloco
+ * <LEDGERBAL> com <BALAMT> (valor) e <DTASOF> (data em que aquele valor era
+ * válido) é o próprio banco informando o saldo, mais confiável que qualquer
+ * conta feita a partir das transações do CSV. Retorna null se o OFX não tiver
+ * esse bloco (não devia acontecer com o Nubank, mas por segurança).
+ */
+function extrair_saldo_ofx(string $ofx): ?array
+{
+    if (!preg_match('/<BALAMT>([\-0-9.]+)<\/BALAMT>\s*<DTASOF>(\d{4})(\d{2})(\d{2})/', $ofx, $m)) {
+        return null;
+    }
+
+    return [
+        'valor' => (float) $m[1],
+        'data' => "{$m[2]}-{$m[3]}-{$m[4]}",
+    ];
+}
+
+/**
+ * Grava (ou atualiza, se já existir uma linha pra essa data) o saldo real
+ * conhecido numa data — usado toda vez que "Verificar extrato" processa um
+ * e-mail com OFX, então o histórico de saldo cresce junto com o extrato.
+ */
+function salvar_saldo_extrato(PDO $pdo, int $familiaId, string $data, float $valor): void
+{
+    $stmt = $pdo->prepare(
+        'INSERT INTO saldo_extrato (familia_id, data, valor) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE valor = VALUES(valor)'
+    );
+    $stmt->execute([$familiaId, $data, $valor]);
+}
+
+/**
+ * "Saldo disponível" da família até o fim do mês informado: acha a data mais
+ * recente com saldo real conhecido (lido de algum OFX, ver extrair_saldo_ofx())
+ * que seja igual ou anterior ao mês pedido, e soma por cima só o que o CSV
+ * mostrou DEPOIS dessa data — muito mais preciso que somar o CSV inteiro
+ * desde sempre, porque usa um ponto de partida real do banco a cada mês, não
+ * só um valor digitado à mão uma vez.
+ *
+ * Se a família ainda não tem nenhum saldo_extrato (nunca rodou "Verificar
+ * extrato", ou processou só e-mails sem OFX), cai pro campo saldo_inicial
+ * manual de Configurações — mesma lógica de antes, como reserva.
+ */
+function saldo_disponivel_ate(PDO $pdo, int $familiaId, string $mesReferencia): float
+{
+    $stmt = $pdo->prepare(
+        'SELECT valor, data FROM saldo_extrato
+         WHERE familia_id = ? AND DATE_FORMAT(data, "%Y-%m") <= ?
+         ORDER BY data DESC LIMIT 1'
+    );
+    $stmt->execute([$familiaId, $mesReferencia]);
+    $referencia = $stmt->fetch();
+
+    if ($referencia !== false) {
+        $stmt = $pdo->prepare(
+            'SELECT COALESCE(SUM(valor), 0) AS total FROM transacao_importada
+             WHERE familia_id = ? AND data > ? AND DATE_FORMAT(data, "%Y-%m") <= ?'
+        );
+        $stmt->execute([$familiaId, $referencia['data'], $mesReferencia]);
+        return (float) $referencia['valor'] + (float) $stmt->fetch()['total'];
+    }
+
+    // Reserva: nenhum saldo real conhecido ainda, usa o campo manual.
+    $stmt = $pdo->prepare('SELECT saldo_inicial, saldo_inicial_data FROM familia WHERE id = ?');
+    $stmt->execute([$familiaId]);
+    $familiaSaldo = $stmt->fetch();
+    $saldoInicial = (float) $familiaSaldo['saldo_inicial'];
+    $saldoInicialData = $familiaSaldo['saldo_inicial_data'];
+
+    $mesDoSaldoInicial = $saldoInicialData !== null ? substr($saldoInicialData, 0, 7) : null;
+    $aplicaSaldoInicial = $mesDoSaldoInicial === null || $mesReferencia >= $mesDoSaldoInicial;
+
+    $sql = 'SELECT COALESCE(SUM(valor), 0) AS total FROM transacao_importada WHERE familia_id = ? AND DATE_FORMAT(data, "%Y-%m") <= ?';
+    $params = [$familiaId, $mesReferencia];
+    if ($aplicaSaldoInicial && $saldoInicialData !== null) {
+        $sql .= ' AND data >= ?';
+        $params[] = $saldoInicialData;
+    }
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $saldoExtrato = (float) $stmt->fetch()['total'];
+
+    return ($aplicaSaldoInicial ? $saldoInicial : 0.0) + $saldoExtrato;
 }
 
 /**
@@ -181,9 +311,115 @@ function achar_receita_correspondente(PDO $pdo, int $familiaId, float $valor, st
 }
 
 /**
+ * Acha, entre Metas/Prioridades/Dívidas ainda em aberto, qual tem a palavra-
+ * chave (identificador_extrato) cadastrada pelo usuário aparecendo na
+ * descrição da transação de saída. Ao contrário de achar_conta_mes_correspondente()
+ * e achar_receita_correspondente(), NÃO tem fallback por valor único — uma
+ * meta pode receber vários aportes de valores diferentes ao longo dos meses,
+ * então "valor bate" não é sinal confiável de que é daquela meta específica
+ * (só a palavra-chave, que o usuário escolheu de propósito, é confiável aqui).
+ */
+function achar_meta_correspondente(PDO $pdo, int $familiaId, string $descricao): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM meta WHERE familia_id = ? AND status NOT IN ('CONCLUIDA', 'CANCELADA')
+         AND identificador_extrato IS NOT NULL AND identificador_extrato != ''"
+    );
+    $stmt->execute([$familiaId]);
+    foreach ($stmt->fetchAll() as $meta) {
+        if (mb_stripos($descricao, $meta['identificador_extrato']) !== false) {
+            return $meta;
+        }
+    }
+    return null;
+}
+
+/** Mesma lógica de achar_meta_correspondente(), pra Prioridades (tabela necessidade). */
+function achar_necessidade_correspondente(PDO $pdo, int $familiaId, string $descricao): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM necessidade WHERE familia_id = ? AND status NOT IN ('CONCLUIDA', 'CANCELADA')
+         AND identificador_extrato IS NOT NULL AND identificador_extrato != ''"
+    );
+    $stmt->execute([$familiaId]);
+    foreach ($stmt->fetchAll() as $item) {
+        if (mb_stripos($descricao, $item['identificador_extrato']) !== false) {
+            return $item;
+        }
+    }
+    return null;
+}
+
+/** Mesma lógica de achar_meta_correspondente(), pra Dívidas ainda não quitadas. */
+function achar_divida_correspondente(PDO $pdo, int $familiaId, string $descricao): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM divida WHERE familia_id = ? AND status != 'QUITADA'
+         AND identificador_extrato IS NOT NULL AND identificador_extrato != ''"
+    );
+    $stmt->execute([$familiaId]);
+    foreach ($stmt->fetchAll() as $divida) {
+        if (mb_stripos($descricao, $divida['identificador_extrato']) !== false) {
+            return $divida;
+        }
+    }
+    return null;
+}
+
+/** Mesma lógica da ação "aportar" em metas-processar.php, reaproveitada aqui pro casamento automático. */
+function aplicar_aporte_meta(PDO $pdo, array $meta, float $valor): void
+{
+    $novoGuardado = (float) $meta['valor_guardado'] + $valor;
+    $status = $novoGuardado >= (float) $meta['valor_estimado'] ? 'CONCLUIDA' : 'EM_ANDAMENTO';
+    $stmt = $pdo->prepare('UPDATE meta SET valor_guardado = ?, status = ? WHERE id = ?');
+    $stmt->execute([$novoGuardado, $status, $meta['id']]);
+}
+
+/** Mesma lógica da ação "aportar" em prioridades-processar.php, reaproveitada aqui pro casamento automático. */
+function aplicar_aporte_necessidade(PDO $pdo, array $necessidade, float $valor): void
+{
+    $novoGuardado = (float) $necessidade['valor_guardado'] + $valor;
+    $status = $novoGuardado >= (float) $necessidade['valor_estimado'] ? 'CONCLUIDA' : 'EM_ANDAMENTO';
+    $stmt = $pdo->prepare('UPDATE necessidade SET valor_guardado = ?, status = ? WHERE id = ?');
+    $stmt->execute([$novoGuardado, $status, $necessidade['id']]);
+}
+
+/**
+ * Mesma lógica de "editar" (avançar parcela) em dividas-processar.php: se for
+ * parcelada, avança parcelas_pagas e vencimento em 1 mês e abate uma parcela
+ * do valor_atual; senão, abate o valor da transação direto do valor_atual.
+ * Marca QUITADA se o valor_atual zerar.
+ */
+function aplicar_pagamento_divida(PDO $pdo, array $divida, float $valor, string $dataPagamento): void
+{
+    if ($divida['numero_parcelas'] !== null && $divida['valor_parcela'] !== null) {
+        $novasParcelasPagas = (int) $divida['parcelas_pagas'] + 1;
+        $novoValorAtual = max(0, (float) $divida['valor_atual'] - (float) $divida['valor_parcela']);
+        $novoVencimento = $divida['vencimento'] !== null ? somar_meses($divida['vencimento'], 1) : null;
+        $novoStatus = $novoValorAtual <= 0 ? 'QUITADA' : $divida['status'];
+        $stmt = $pdo->prepare('UPDATE divida SET parcelas_pagas = ?, valor_atual = ?, vencimento = ?, status = ? WHERE id = ?');
+        $stmt->execute([$novasParcelasPagas, $novoValorAtual, $novoVencimento, $novoStatus, $divida['id']]);
+    } else {
+        $novoValorAtual = max(0, (float) $divida['valor_atual'] - $valor);
+        $novoStatus = $novoValorAtual <= 0 ? 'QUITADA' : $divida['status'];
+        $stmt = $pdo->prepare('UPDATE divida SET valor_atual = ?, status = ? WHERE id = ?');
+        $stmt->execute([$novoValorAtual, $novoStatus, $divida['id']]);
+    }
+}
+
+/**
  * Marca uma parcela como paga na Conta do Mês encontrada — mesma conta usada
  * em contas-processar.php (ação editar_parcelas): se for parcelada, avança
  * parcelas_pagas e vencimento em 1 mês; senão, só marca status PAGA.
+ *
+ * Pra conta NÃO parcelada, se o valor real da transação foi informado,
+ * atualiza também o campo "valor" da conta pro que realmente saiu — sem
+ * isso, uma conta cadastrada com valor estimado (ex: "Energia elétrica" a
+ * R$220 antes de existir extrato) ficava pra sempre com o valor antigo
+ * mesmo depois de pagar de verdade R$348 via extrato, subestimando o
+ * "Saldo disponível" do Dashboard (bug real encontrado pelo usuário
+ * comparando o valor mostrado com o extrato). Não faz isso pra parcelada:
+ * lá "valor" é o total financiado, não o valor de uma parcela.
  *
  * Se a conta ainda não tem identificador_extrato (nem cadastrado à mão, nem
  * preenchido por um casamento anterior) e a transação foi informada, grava a
@@ -193,13 +429,16 @@ function achar_receita_correspondente(PDO $pdo, int $familiaId, float $valor, st
  * identificador_extrato geraram "Enel..."/"Claro" duplicados na primeira
  * detecção automática).
  */
-function aplicar_pagamento_conta_mes(PDO $pdo, array $conta, string $dataPagamento, ?string $descricaoTransacao = null): void
+function aplicar_pagamento_conta_mes(PDO $pdo, array $conta, string $dataPagamento, ?string $descricaoTransacao = null, ?float $valorTransacao = null): void
 {
     if ($conta['numero_parcelas'] !== null) {
         $novasParcelasPagas = (int) $conta['parcelas_pagas'] + 1;
         $novoVencimento = somar_meses($conta['vencimento'], 1);
         $stmt = $pdo->prepare('UPDATE conta_mes SET parcelas_pagas = ?, vencimento = ?, paga_em = ? WHERE id = ?');
         $stmt->execute([$novasParcelasPagas, $novoVencimento, $dataPagamento, $conta['id']]);
+    } elseif ($valorTransacao !== null) {
+        $stmt = $pdo->prepare("UPDATE conta_mes SET status = 'PAGA', paga_em = ?, valor = ? WHERE id = ?");
+        $stmt->execute([$dataPagamento, $valorTransacao, $conta['id']]);
     } else {
         $stmt = $pdo->prepare("UPDATE conta_mes SET status = 'PAGA', paga_em = ? WHERE id = ?");
         $stmt->execute([$dataPagamento, $conta['id']]);
@@ -341,6 +580,49 @@ function aplicar_recebimento_receita(PDO $pdo, array $receita, float $valor, str
 }
 
 /**
+ * Pra cada transação de entrada ainda PENDENTE (não bateu com nenhuma Receita
+ * já cadastrada como PREVISTO), cria a Receita direto como RECEBIDO. Ao
+ * contrário de despesa, não precisa de padrão de recorrência como em
+ * detectar_e_criar_contas_fixas() — toda entrada no extrato já é, por
+ * definição, uma receita de verdade (não existe "entrada variável que não é
+ * receita"), então cada transação vira sua própria Receita, uma por uma.
+ * Pedido explícito do usuário: "tudo que eu receber de valor pode ser uma
+ * receita".
+ */
+function criar_receitas_automaticas(PDO $pdo, int $familiaId): int
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM transacao_importada
+         WHERE familia_id = ? AND status = 'PENDENTE' AND valor > 0
+         ORDER BY data ASC"
+    );
+    $stmt->execute([$familiaId]);
+    $pendentes = $stmt->fetchAll();
+
+    $criadas = 0;
+    foreach ($pendentes as $t) {
+        $chave = extrair_chave_beneficiario($t['descricao']);
+        $nome = $chave !== '' ? mb_convert_case($chave, MB_CASE_TITLE, 'UTF-8') : 'Recebimento';
+
+        $stmt = $pdo->prepare(
+            "INSERT INTO receita (familia_id, nome, tipo, valor_previsto, valor_recebido, data_prevista, data_recebimento, identificador_extrato, status)
+             VALUES (?, ?, 'Outros', ?, ?, ?, ?, ?, 'RECEBIDO')"
+        );
+        $stmt->execute([
+            $familiaId, $nome, (float) $t['valor'], (float) $t['valor'], $t['data'], $t['data'], $chave !== '' ? $chave : null,
+        ]);
+        $receitaId = (int) $pdo->lastInsertId();
+
+        $stmt = $pdo->prepare("UPDATE transacao_importada SET status = 'CONFIRMADA', receita_id = ? WHERE id = ?");
+        $stmt->execute([$receitaId, $t['id']]);
+
+        $criadas++;
+    }
+
+    return $criadas;
+}
+
+/**
  * Orquestra tudo: baixa todos os CSVs de extrato do Gmail (um e-mail pode
  * cobrir cada mês), interpreta e junta tudo numa lista só, e pra cada
  * transação nova (que ainda não está em transacao_importada, deduplicada por
@@ -355,14 +637,21 @@ function processar_extrato_automatico(PDO $pdo, int $familiaId): array
         return ['erro' => 'Cadastre seu e-mail e senha de app do Gmail em Configurações > Extrato automático antes de verificar.'];
     }
 
-    $csvs = baixar_csvs_extrato_gmail($credenciais['email'], $credenciais['senha']);
-    if (count($csvs) === 0) {
+    $anexos = baixar_csvs_extrato_gmail($credenciais['email'], $credenciais['senha']);
+    if (count($anexos) === 0) {
         return ['erro' => 'Nenhum e-mail com "Extrato" encontrado na caixa de entrada.'];
     }
 
     $transacoes = [];
-    foreach ($csvs as $csv) {
-        array_push($transacoes, ...interpretar_csv_extrato($csv));
+    $saldosOfx = [];
+    foreach ($anexos as $anexo) {
+        array_push($transacoes, ...interpretar_csv_extrato($anexo['csv']));
+        if ($anexo['ofx'] !== null) {
+            $saldo = extrair_saldo_ofx($anexo['ofx']);
+            if ($saldo !== null) {
+                $saldosOfx[] = $saldo;
+            }
+        }
     }
     $novas = 0;
     $casadas = 0;
@@ -382,14 +671,32 @@ function processar_extrato_automatico(PDO $pdo, int $familiaId): array
         $novas++;
 
         $contaMesId = null;
+        $metaId = null;
+        $necessidadeId = null;
+        $dividaId = null;
         $receitaId = null;
         $status = 'PENDENTE';
 
         if ($t['valor'] < 0) {
             $conta = achar_conta_mes_correspondente($pdo, $familiaId, abs($t['valor']), $t['descricao']);
             if ($conta !== null) {
-                aplicar_pagamento_conta_mes($pdo, $conta, $t['data'], $t['descricao']);
+                aplicar_pagamento_conta_mes($pdo, $conta, $t['data'], $t['descricao'], abs((float) $t['valor']));
                 $contaMesId = (int) $conta['id'];
+                $status = 'CONFIRMADA';
+                $casadas++;
+            } elseif (($meta = achar_meta_correspondente($pdo, $familiaId, $t['descricao'])) !== null) {
+                aplicar_aporte_meta($pdo, $meta, abs((float) $t['valor']));
+                $metaId = (int) $meta['id'];
+                $status = 'CONFIRMADA';
+                $casadas++;
+            } elseif (($necessidade = achar_necessidade_correspondente($pdo, $familiaId, $t['descricao'])) !== null) {
+                aplicar_aporte_necessidade($pdo, $necessidade, abs((float) $t['valor']));
+                $necessidadeId = (int) $necessidade['id'];
+                $status = 'CONFIRMADA';
+                $casadas++;
+            } elseif (($divida = achar_divida_correspondente($pdo, $familiaId, $t['descricao'])) !== null) {
+                aplicar_pagamento_divida($pdo, $divida, abs((float) $t['valor']), $t['data']);
+                $dividaId = (int) $divida['id'];
                 $status = 'CONFIRMADA';
                 $casadas++;
             }
@@ -404,12 +711,19 @@ function processar_extrato_automatico(PDO $pdo, int $familiaId): array
         }
 
         $stmt = $pdo->prepare(
-            'INSERT INTO transacao_importada (familia_id, identificador_externo, data, valor, descricao, status, conta_mes_id, receita_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            'INSERT INTO transacao_importada (familia_id, identificador_externo, data, valor, descricao, status, conta_mes_id, meta_id, necessidade_id, divida_id, receita_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
         );
-        $stmt->execute([$familiaId, $t['identificador'], $t['data'], $t['valor'], $t['descricao'], $status, $contaMesId, $receitaId]);
+        $stmt->execute([
+            $familiaId, $t['identificador'], $t['data'], $t['valor'], $t['descricao'], $status,
+            $contaMesId, $metaId, $necessidadeId, $dividaId, $receitaId,
+        ]);
     }
         $deteccao = detectar_e_criar_contas_fixas($pdo, $familiaId);
+        $receitasCriadas = criar_receitas_automaticas($pdo, $familiaId);
+        foreach ($saldosOfx as $saldo) {
+            salvar_saldo_extrato($pdo, $familiaId, $saldo['data'], $saldo['valor']);
+        }
         $pdo->commit();
     } catch (Throwable $erro) {
         $pdo->rollBack();
@@ -422,5 +736,7 @@ function processar_extrato_automatico(PDO $pdo, int $familiaId): array
         'casadas' => $casadas,
         'contas_fixas_criadas' => $deteccao['contas'],
         'transacoes_absorvidas_por_contas_fixas' => $deteccao['transacoes'],
+        'receitas_criadas' => $receitasCriadas,
+        'saldos_ofx_lidos' => count($saldosOfx),
     ];
 }

@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS familia (
     -- guardada cifrada (ver src/cripto.php), nunca em texto puro.
     imap_email VARCHAR(190) NULL,
     imap_senha_app_cifrada VARCHAR(500) NULL,
+    -- Saldo que a família já tinha guardado ANTES do extrato importado
+    -- começar a existir — soma por cima do saldo calculado pela soma do
+    -- extrato, pra "Saldo disponível"/"Saldo do período" baterem com a
+    -- realidade (o extrato só cobre a partir de um certo mês).
+    saldo_inicial DECIMAL(12,2) NOT NULL DEFAULT 0,
+    saldo_inicial_data DATE NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -129,6 +135,7 @@ CREATE TABLE meta (
     observacoes VARCHAR(1000) NULL,
     links_pesquisados VARCHAR(500) NULL,
     orcamentos_encontrados VARCHAR(500) NULL,
+    identificador_extrato VARCHAR(160) NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_meta_familia FOREIGN KEY (familia_id) REFERENCES familia (id) ON DELETE CASCADE,
     CONSTRAINT fk_meta_membro FOREIGN KEY (familia_membro_id) REFERENCES familia_membro (id)
@@ -170,6 +177,7 @@ CREATE TABLE necessidade (
     valor_guardado DECIMAL(12,2) NOT NULL DEFAULT 0,
     mes_planejado DATE NOT NULL,
     status ENUM('PLANEJADA','EM_ANDAMENTO','CONCLUIDA','CANCELADA') NOT NULL DEFAULT 'PLANEJADA',
+    identificador_extrato VARCHAR(160) NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_necessidade_familia FOREIGN KEY (familia_id) REFERENCES familia (id) ON DELETE CASCADE,
     CONSTRAINT fk_necessidade_membro FOREIGN KEY (familia_membro_id) REFERENCES familia_membro (id)
@@ -192,6 +200,7 @@ CREATE TABLE divida (
     prioridade ENUM('URGENTE','ALTA','MEDIA','BAIXA') NOT NULL DEFAULT 'MEDIA',
     possibilidade_negociacao TINYINT(1) NOT NULL DEFAULT 0,
     observacoes VARCHAR(500) NULL,
+    identificador_extrato VARCHAR(160) NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_divida_familia FOREIGN KEY (familia_id) REFERENCES familia (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -227,10 +236,29 @@ CREATE TABLE transacao_importada (
     descricao VARCHAR(500) NOT NULL,
     status ENUM('PENDENTE','CONFIRMADA','IGNORADA') NOT NULL DEFAULT 'PENDENTE',
     conta_mes_id INT NULL,
+    meta_id INT NULL,
+    necessidade_id INT NULL,
+    divida_id INT NULL,
     receita_id INT NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_transacao_familia_identificador (familia_id, identificador_externo),
     CONSTRAINT fk_transacao_familia FOREIGN KEY (familia_id) REFERENCES familia (id) ON DELETE CASCADE,
     CONSTRAINT fk_transacao_conta_mes FOREIGN KEY (conta_mes_id) REFERENCES conta_mes (id) ON DELETE SET NULL,
+    CONSTRAINT fk_transacao_meta FOREIGN KEY (meta_id) REFERENCES meta (id) ON DELETE SET NULL,
+    CONSTRAINT fk_transacao_necessidade FOREIGN KEY (necessidade_id) REFERENCES necessidade (id) ON DELETE SET NULL,
+    CONSTRAINT fk_transacao_divida FOREIGN KEY (divida_id) REFERENCES divida (id) ON DELETE SET NULL,
     CONSTRAINT fk_transacao_receita FOREIGN KEY (receita_id) REFERENCES receita (id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Saldo real da conta, lido direto do anexo OFX de cada e-mail de extrato
+-- (campo LEDGERBAL/BALAMT — o próprio banco informa) — mais preciso que
+-- pedir pro usuário digitar um saldo manualmente. Uma linha por data conhecida.
+CREATE TABLE saldo_extrato (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    familia_id INT NOT NULL,
+    data DATE NOT NULL,
+    valor DECIMAL(12,2) NOT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_saldo_extrato_familia_data (familia_id, data),
+    CONSTRAINT fk_saldo_extrato_familia FOREIGN KEY (familia_id) REFERENCES familia (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

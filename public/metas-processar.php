@@ -17,8 +17,8 @@ if ($acao === 'criar') {
     $familiaMembroId = texto_ou_null($_POST['familia_membro_id'] ?? null);
 
     $stmt = $pdo->prepare(
-        'INSERT INTO meta (familia_id, familia_membro_id, nome, tipo, categoria, valor_estimado, data_desejada, prioridade, links_pesquisados)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO meta (familia_id, familia_membro_id, nome, tipo, categoria, valor_estimado, data_desejada, prioridade, identificador_extrato, links_pesquisados)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $familiaId,
@@ -29,6 +29,7 @@ if ($acao === 'criar') {
         parse_valor($_POST['valor_estimado'] ?? null),
         data_ou_null($_POST['data_desejada'] ?? null),
         in_array($_POST['prioridade'] ?? '', ['URGENTE', 'ALTA', 'MEDIA', 'BAIXA'], true) ? $_POST['prioridade'] : 'MEDIA',
+        texto_ou_null($_POST['identificador_extrato'] ?? null),
         texto_ou_null($_POST['links_pesquisados'] ?? null),
     ]);
 } elseif ($acao === 'aportar') {

@@ -15,8 +15,8 @@ $acao = $_POST['acao'] ?? '';
 
 if ($acao === 'criar') {
     $stmt = $pdo->prepare(
-        'INSERT INTO necessidade (familia_id, item, pessoa_nome, categoria, prioridade, valor_estimado, mes_planejado)
-         VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO necessidade (familia_id, item, pessoa_nome, categoria, prioridade, valor_estimado, mes_planejado, identificador_extrato)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $familiaId,
@@ -26,6 +26,7 @@ if ($acao === 'criar') {
         in_array($_POST['prioridade'] ?? '', ['URGENTE', 'ALTA', 'MEDIA', 'BAIXA'], true) ? $_POST['prioridade'] : 'MEDIA',
         parse_valor($_POST['valor_estimado'] ?? null),
         (string) $_POST['mes_planejado'],
+        texto_ou_null($_POST['identificador_extrato'] ?? null),
     ]);
 } elseif ($acao === 'aportar') {
     $id = (int) $_POST['id'];

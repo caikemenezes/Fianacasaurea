@@ -63,6 +63,7 @@ layout_rodape($usuario_atual);
     </select>
     <input name="valor_estimado" placeholder="Valor estimado" type="text" inputmode="decimal" data-moeda required class="campo">
     <input name="mes_planejado" type="date" required class="campo">
+    <input name="identificador_extrato" placeholder="Palavra-chave no extrato (opcional)" class="campo">
     <button type="submit" class="botao botao-abrange-linha">Adicionar prioridade</button>
   </form>
 
