@@ -14,6 +14,16 @@ $mesAnterior = mes_deslocado($mes, -1);
 $mesSeguinte = mes_deslocado($mes, 1);
 
 $resumo = resumo_do_mes($pdo, $familiaId, $mes);
+
+$stmt = $pdo->prepare(
+    'SELECT
+        COALESCE(SUM(CASE WHEN valor > 0 THEN valor ELSE 0 END), 0) AS total_entradas,
+        COALESCE(SUM(CASE WHEN valor < 0 THEN -valor ELSE 0 END), 0) AS total_saidas
+     FROM transacao_importada WHERE familia_id = ? AND DATE_FORMAT(data, "%Y-%m") = ?'
+);
+$stmt->execute([$familiaId, $mes]);
+$totaisExtratoMes = $stmt->fetch();
+
 $alertas = alertas_importantes($pdo, $familiaId);
 $totalAlertas = array_sum(array_column($alertas, 'contagem'));
 $serieGasto = serie_gasto_acumulado($pdo, $familiaId, $mes);
@@ -56,8 +66,15 @@ $previsao = $resumo['saldo_previsto_fim_mes'];
       <div class="previsao">Previsão para o fim do mês: <strong style="color: <?= $previsao < 0 ? 'var(--perigo)' : '#fff' ?>"><?= formatar_moeda($previsao) ?></strong></div>
     </div>
     <div class="cartao cartao-planejamento">
-      <h2>Planejamento do mês</h2>
-      <p>Acompanhe contas, cartão e metas para saber exatamente quanto ainda pode gastar.</p>
+      <h2>Extrato</h2>
+      <?php if ((float) $totaisExtratoMes['total_entradas'] > 0 || (float) $totaisExtratoMes['total_saidas'] > 0): ?>
+        <div class="linha-flex" style="gap:1.25rem;margin:0 0 1rem">
+          <span style="font-size:0.95rem"><strong style="color:var(--sucesso)">+<?= formatar_moeda((float) $totaisExtratoMes['total_entradas']) ?></strong></span>
+          <span style="font-size:0.95rem"><strong style="color:var(--perigo)">-<?= formatar_moeda((float) $totaisExtratoMes['total_saidas']) ?></strong></span>
+        </div>
+      <?php else: ?>
+        <p>Nenhuma transação do extrato importada ainda neste mês.</p>
+      <?php endif; ?>
       <?= tag_link('/contas.php', 'contas', 'botao-secundario') ?>Ver contas do mês <?= icone('seta-cta') ?><?= fechar_tag_link('contas') ?>
     </div>
   </div>

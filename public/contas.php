@@ -94,6 +94,16 @@ $receitasAbertas = $stmt->fetchAll();
 $contasFiltradas = $filtroAtivo === 'todas'
     ? $contas
     : array_values(array_filter($contas, fn($c) => $c['status_exibido'] === strtoupper($filtroAtivo)));
+$totalContasFiltradas = array_sum(array_map($valorMensalDaConta, $contasFiltradas));
+
+$totalGastosVariaveis = array_sum(array_map(
+    fn(array $t): float => (float) $t['valor'] < 0 ? abs((float) $t['valor']) : 0,
+    $transacoesPendentes
+));
+$totalRecebimentosVariaveis = array_sum(array_map(
+    fn(array $t): float => (float) $t['valor'] > 0 ? (float) $t['valor'] : 0,
+    $transacoesPendentes
+));
 
 $STATUS_SELO = ['PAGA' => 'selo-sucesso', 'PENDENTE' => 'selo-alerta', 'ATRASADA' => 'selo-perigo'];
 $STATUS_LABEL = ['PAGA' => 'Paga', 'PENDENTE' => 'Pendente', 'ATRASADA' => 'Atrasada'];
@@ -223,84 +233,23 @@ layout_rodape($usuario_atual);
           <tr><td colspan="8" class="tabela-vazia"><?= count($contas) === 0 ? 'Nenhuma conta cadastrada ainda.' : 'Nenhuma conta nesse filtro.' ?></td></tr>
         <?php endif; ?>
       </tbody>
+      <?php if (count($contasFiltradas) > 0): ?>
+        <tfoot>
+          <tr>
+            <td colspan="2" class="texto-suave">Total</td>
+            <td colspan="6"><strong><?= formatar_moeda($totalContasFiltradas) ?></strong></td>
+          </tr>
+        </tfoot>
+      <?php endif; ?>
     </table>
   </div>
 
-  <div class="cartao pilha-pequena">
-    <?= info_icone('Mostra quanto ainda falta pagar, quanto já foi pago e quanto você tem em caixa neste mês. Os valores mudam conforme o filtro de status selecionado acima.') ?>
-    <h2 class="cartao-titulo">Resumo de pagamentos</h2>
+  <?php if (count($transacoesPendentes) > 0): ?>
+    <div class="cartao pilha-pequena">
+      <?= info_icone('Gasto do extrato que não é nenhuma das suas contas fixas cadastradas acima — mercado, Uber, lanche, compras avulsas. Se algum desses for na verdade uma conta fixa que você esqueceu de cadastrar, vincula na conta certa aqui; senão, ignora.') ?>
+      <h2 class="cartao-titulo">Gastos variáveis do extrato</h2>
+      <p class="texto-suave" style="font-size:0.8rem;margin:0">Mês: <?= ucfirst(formatar_mes_ano($mesExtrato . '-01')) ?> — mude o mês na seção "Extrato bancário automático" mais abaixo.</p>
 
-    <?php if ($filtroAtivo !== 'paga'):
-      $rotulo = $filtroAtivo === 'pendente' ? 'Pendente' : ($filtroAtivo === 'atrasada' ? 'Atrasado' : 'Falta pagar');
-      $sub = $filtroAtivo === 'pendente' ? 'Contas pendentes' : ($filtroAtivo === 'atrasada' ? 'Contas atrasadas' : 'Contas pendentes e atrasadas');
-      $val = $filtroAtivo === 'pendente' ? $totalPendente : ($filtroAtivo === 'atrasada' ? $totalAtrasado : $totalAPagar);
-    ?>
-      <div class="item-lista-rica">
-        <span class="item-icone"><?= icone($filtroAtivo === 'atrasada' ? 'alerta' : 'relogio') ?></span>
-        <div class="item-corpo"><p class="item-titulo"><?= $rotulo ?></p><p class="item-subtitulo"><?= $sub ?></p></div>
-        <span class="item-valor"><?= formatar_moeda($val) ?></span>
-      </div>
-      <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round($val / $maiorValor * 100)) ?>%"></div></div>
-    <?php endif; ?>
-
-    <?php if ($filtroAtivo === 'todas' || $filtroAtivo === 'paga'): ?>
-      <div class="item-lista-rica">
-        <span class="item-icone"><?= icone('check') ?></span>
-        <div class="item-corpo"><p class="item-titulo">Já pago</p><p class="item-subtitulo">Contas quitadas</p></div>
-        <span class="item-valor"><?= formatar_moeda($totalPago) ?></span>
-      </div>
-      <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round($totalPago / $maiorValor * 100)) ?>%"></div></div>
-    <?php endif; ?>
-
-    <div class="item-lista-rica">
-      <span class="item-icone"><?= icone('carteira') ?></span>
-      <div class="item-corpo"><p class="item-titulo">Em caixa</p><p class="item-subtitulo">Saldo disponível no mês</p></div>
-      <span class="item-valor"><?= formatar_moeda($saldoEmCaixa) ?></span>
-    </div>
-    <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round(max($saldoEmCaixa, 0) / $maiorValor * 100)) ?>%"></div></div>
-  </div>
-
-  <details class="cartao pilha-pequena secao-recolhivel">
-    <summary>Extrato bancário automático</summary>
-    <?= info_icone('Procura no Gmail o e-mail mais recente com "Extrato" no assunto, lê o CSV anexado do Nubank e casa automaticamente cada gasto com uma conta daqui (por palavra-chave ou valor). O que não bater com nada aparece na lista abaixo — você vincula manualmente ou ignora. Se algo casar errado, é só corrigir os campos na tabela, igual qualquer edição manual.') ?>
-    <form method="post" action="/extrato-processar.php">
-      <?= csrf_campo_oculto($usuario_atual) ?>
-      <input type="hidden" name="acao" value="verificar">
-      <button type="submit" class="botao">Verificar extrato agora</button>
-    </form>
-
-    <?php if (isset($_GET['erro'])): ?>
-      <p class="texto-suave" style="color:var(--perigo)">Erro: <?= htmlspecialchars((string) $_GET['erro'], ENT_QUOTES, 'UTF-8') ?></p>
-    <?php elseif (isset($_GET['novas'])): ?>
-      <p class="texto-suave">
-        Encontradas <strong><?= (int) $_GET['novas'] ?></strong> transações novas —
-        <strong><?= (int) $_GET['casadas'] ?></strong> casadas automaticamente,
-        <strong><?= (int) $_GET['novas'] - (int) $_GET['casadas'] ?></strong> aguardando sua conferência abaixo.
-      </p>
-    <?php endif; ?>
-
-    <form method="get" class="linha-flex" style="justify-content:flex-start">
-      <?php if ($filtroAtivo !== 'todas'): ?><input type="hidden" name="status" value="<?= htmlspecialchars($filtroAtivo, ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
-      <label for="mes_extrato" class="texto-suave">Mês do extrato:</label>
-      <select name="mes_extrato" id="mes_extrato" class="campo campo-tabela" onchange="this.form.submit()">
-        <?php foreach ($mesesExtrato as $mes): ?>
-          <option value="<?= htmlspecialchars($mes, ENT_QUOTES, 'UTF-8') ?>" <?= $mes === $mesExtrato ? 'selected' : '' ?>>
-            <?= ucfirst(formatar_mes_ano($mes . '-01')) ?>
-          </option>
-        <?php endforeach; ?>
-      </select>
-    </form>
-
-    <?php if ((float) $totaisExtrato['total_entradas'] > 0 || (float) $totaisExtrato['total_saidas'] > 0): ?>
-      <div class="linha-flex" style="gap:1.5rem">
-        <p class="texto-suave">Total de entradas do extrato: <strong style="color:var(--sucesso)"><?= formatar_moeda((float) $totaisExtrato['total_entradas']) ?></strong></p>
-        <p class="texto-suave">Total de saídas do extrato: <strong style="color:var(--perigo)"><?= formatar_moeda((float) $totaisExtrato['total_saidas']) ?></strong></p>
-      </div>
-    <?php else: ?>
-      <p class="texto-suave">Nenhuma transação importada nesse mês.</p>
-    <?php endif; ?>
-
-    <?php if (count($transacoesPendentes) > 0): ?>
       <div class="tabela-wrap">
         <table class="tabela">
           <thead><tr><th>Data</th><th>Descrição</th><th>Valor</th><th>Vincular a</th><th></th></tr></thead>
@@ -350,8 +299,100 @@ layout_rodape($usuario_atual);
               </tr>
             <?php endforeach; ?>
           </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2" class="texto-suave">Total</td>
+              <td>
+                <?php if ($totalGastosVariaveis > 0): ?><strong style="color:var(--perigo)">-<?= formatar_moeda($totalGastosVariaveis) ?></strong><?php endif; ?>
+                <?php if ($totalRecebimentosVariaveis > 0): ?><strong style="color:var(--sucesso)">+<?= formatar_moeda($totalRecebimentosVariaveis) ?></strong><?php endif; ?>
+              </td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
+    </div>
+  <?php endif; ?>
+
+  <div class="cartao pilha-pequena">
+    <?= info_icone('Mostra quanto ainda falta pagar, quanto já foi pago e quanto você tem em caixa neste mês. Os valores mudam conforme o filtro de status selecionado acima.') ?>
+    <h2 class="cartao-titulo">Resumo de pagamentos</h2>
+
+    <?php if ($filtroAtivo !== 'paga'):
+      $rotulo = $filtroAtivo === 'pendente' ? 'Pendente' : ($filtroAtivo === 'atrasada' ? 'Atrasado' : 'Falta pagar');
+      $sub = $filtroAtivo === 'pendente' ? 'Contas pendentes' : ($filtroAtivo === 'atrasada' ? 'Contas atrasadas' : 'Contas pendentes e atrasadas');
+      $val = $filtroAtivo === 'pendente' ? $totalPendente : ($filtroAtivo === 'atrasada' ? $totalAtrasado : $totalAPagar);
+    ?>
+      <div class="item-lista-rica">
+        <span class="item-icone"><?= icone($filtroAtivo === 'atrasada' ? 'alerta' : 'relogio') ?></span>
+        <div class="item-corpo"><p class="item-titulo"><?= $rotulo ?></p><p class="item-subtitulo"><?= $sub ?></p></div>
+        <span class="item-valor"><?= formatar_moeda($val) ?></span>
+      </div>
+      <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round($val / $maiorValor * 100)) ?>%"></div></div>
+    <?php endif; ?>
+
+    <?php if ($filtroAtivo === 'todas' || $filtroAtivo === 'paga'): ?>
+      <div class="item-lista-rica">
+        <span class="item-icone"><?= icone('check') ?></span>
+        <div class="item-corpo"><p class="item-titulo">Já pago</p><p class="item-subtitulo">Contas quitadas</p></div>
+        <span class="item-valor"><?= formatar_moeda($totalPago) ?></span>
+      </div>
+      <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round($totalPago / $maiorValor * 100)) ?>%"></div></div>
+    <?php endif; ?>
+
+    <div class="item-lista-rica">
+      <span class="item-icone"><?= icone('carteira') ?></span>
+      <div class="item-corpo"><p class="item-titulo">Em caixa</p><p class="item-subtitulo">Saldo disponível no mês</p></div>
+      <span class="item-valor"><?= formatar_moeda($saldoEmCaixa) ?></span>
+    </div>
+    <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round(max($saldoEmCaixa, 0) / $maiorValor * 100)) ?>%"></div></div>
+  </div>
+
+  <details class="cartao pilha-pequena secao-recolhivel">
+    <summary>Extrato bancário automático</summary>
+    <?= info_icone('Procura no Gmail todos os e-mails de "Extrato" e lê o CSV anexado do Nubank. Casa automaticamente cada gasto com uma conta já cadastrada (por palavra-chave ou valor) e, se o mesmo beneficiário pagar por Pix em 3 meses ou mais sem bater com nenhuma conta, cria a conta fixa sozinho. O que sobrar sem reconhecer aparece em "Gastos variáveis do extrato", pra você vincular manualmente ou ignorar.') ?>
+    <form method="post" action="/extrato-processar.php">
+      <?= csrf_campo_oculto($usuario_atual) ?>
+      <input type="hidden" name="acao" value="verificar">
+      <button type="submit" class="botao">Verificar extrato agora</button>
+    </form>
+
+    <?php if (isset($_GET['erro'])): ?>
+      <p class="texto-suave" style="color:var(--perigo)">Erro: <?= htmlspecialchars((string) $_GET['erro'], ENT_QUOTES, 'UTF-8') ?></p>
+    <?php elseif (isset($_GET['novas'])):
+      $fixasCriadas = (int) ($_GET['fixas_criadas'] ?? 0);
+      $fixasTransacoes = (int) ($_GET['fixas_transacoes'] ?? 0);
+      $aindaPendente = (int) $_GET['novas'] - (int) $_GET['casadas'] - $fixasTransacoes;
+    ?>
+      <p class="texto-suave">
+        Encontradas <strong><?= (int) $_GET['novas'] ?></strong> transações novas —
+        <strong><?= (int) $_GET['casadas'] ?></strong> casadas automaticamente,
+        <?php if ($fixasCriadas > 0): ?>
+          <strong><?= $fixasCriadas ?></strong> conta<?= $fixasCriadas > 1 ? 's fixas novas reconhecidas' : ' fixa nova reconhecida' ?> sozinho,
+        <?php endif; ?>
+        <strong><?= max(0, $aindaPendente) ?></strong> em "Gastos variáveis do extrato" aguardando você.
+      </p>
+    <?php endif; ?>
+
+    <form method="get" class="linha-flex" style="justify-content:flex-start">
+      <?php if ($filtroAtivo !== 'todas'): ?><input type="hidden" name="status" value="<?= htmlspecialchars($filtroAtivo, ENT_QUOTES, 'UTF-8') ?>"><?php endif; ?>
+      <label for="mes_extrato" class="texto-suave">Mês do extrato:</label>
+      <select name="mes_extrato" id="mes_extrato" class="campo campo-tabela" onchange="this.form.submit()">
+        <?php foreach ($mesesExtrato as $mes): ?>
+          <option value="<?= htmlspecialchars($mes, ENT_QUOTES, 'UTF-8') ?>" <?= $mes === $mesExtrato ? 'selected' : '' ?>>
+            <?= ucfirst(formatar_mes_ano($mes . '-01')) ?>
+          </option>
+        <?php endforeach; ?>
+      </select>
+    </form>
+
+    <?php if ((float) $totaisExtrato['total_entradas'] > 0 || (float) $totaisExtrato['total_saidas'] > 0): ?>
+      <div class="linha-flex" style="gap:1.5rem">
+        <p class="texto-suave">Total de entradas do extrato: <strong style="color:var(--sucesso)"><?= formatar_moeda((float) $totaisExtrato['total_entradas']) ?></strong></p>
+        <p class="texto-suave">Total de saídas do extrato: <strong style="color:var(--perigo)"><?= formatar_moeda((float) $totaisExtrato['total_saidas']) ?></strong></p>
+      </div>
+    <?php else: ?>
+      <p class="texto-suave">Nenhuma transação importada nesse mês.</p>
     <?php endif; ?>
   </details>
 </div>

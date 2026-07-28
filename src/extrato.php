@@ -184,8 +184,16 @@ function achar_receita_correspondente(PDO $pdo, int $familiaId, float $valor, st
  * Marca uma parcela como paga na Conta do Mês encontrada — mesma conta usada
  * em contas-processar.php (ação editar_parcelas): se for parcelada, avança
  * parcelas_pagas e vencimento em 1 mês; senão, só marca status PAGA.
+ *
+ * Se a conta ainda não tem identificador_extrato (nem cadastrado à mão, nem
+ * preenchido por um casamento anterior) e a transação foi informada, grava a
+ * chave do beneficiário automaticamente — sem isso, detectar_e_criar_contas_fixas()
+ * não tem como saber que essa conta já existe e cria duplicata (bug real
+ * encontrado: "Energia elétrica"/"Internet" vinculadas manualmente sem
+ * identificador_extrato geraram "Enel..."/"Claro" duplicados na primeira
+ * detecção automática).
  */
-function aplicar_pagamento_conta_mes(PDO $pdo, array $conta, string $dataPagamento): void
+function aplicar_pagamento_conta_mes(PDO $pdo, array $conta, string $dataPagamento, ?string $descricaoTransacao = null): void
 {
     if ($conta['numero_parcelas'] !== null) {
         $novasParcelasPagas = (int) $conta['parcelas_pagas'] + 1;
@@ -196,6 +204,134 @@ function aplicar_pagamento_conta_mes(PDO $pdo, array $conta, string $dataPagamen
         $stmt = $pdo->prepare("UPDATE conta_mes SET status = 'PAGA', paga_em = ? WHERE id = ?");
         $stmt->execute([$dataPagamento, $conta['id']]);
     }
+
+    if ($descricaoTransacao !== null && (string) ($conta['identificador_extrato'] ?? '') === '') {
+        $chave = extrair_chave_beneficiario($descricaoTransacao);
+        if ($chave !== '') {
+            $stmt = $pdo->prepare('UPDATE conta_mes SET identificador_extrato = ? WHERE id = ? AND identificador_extrato IS NULL');
+            $stmt->execute([$chave, $conta['id']]);
+        }
+    }
+}
+
+/**
+ * Extrai uma "chave de beneficiário" normalizada da descrição de uma
+ * transação, pra agrupar pagamentos ao mesmo destinatário/loja em meses
+ * diferentes e detectar padrão de recorrência. Cobre os formatos reais do
+ * Nubank: "Transferência enviada pelo Pix - NOME - CPF/CNPJ - BANCO..." (fica
+ * só NOME) e "Compra no débito - LOJA" (fica só LOJA).
+ */
+function extrair_chave_beneficiario(string $descricao): string
+{
+    $prefixos = [
+        'Estorno - Compra no débito - ',
+        'Compra no débito - ',
+        'Transferência enviada pelo Pix - ',
+        'Transferência recebida pelo Pix - ',
+        'Transferência Recebida - ',
+        'Transferência enviada - ',
+    ];
+
+    $resto = $descricao;
+    foreach ($prefixos as $prefixo) {
+        if (str_starts_with($descricao, $prefixo)) {
+            $resto = substr($descricao, strlen($prefixo));
+            break;
+        }
+    }
+
+    $partes = explode(' - ', $resto);
+
+    return mb_strtoupper(trim($partes[0]), 'UTF-8');
+}
+
+/** true só pra Pix enviado (transferência com CPF/CNPJ do beneficiário) — usado pra restringir a detecção de conta fixa, ver detectar_e_criar_contas_fixas(). */
+function eh_pix_enviado(string $descricao): bool
+{
+    return str_starts_with($descricao, 'Transferência enviada pelo Pix - ')
+        || str_starts_with($descricao, 'Transferência enviada - ');
+}
+
+/**
+ * Depois do casamento normal, procura entre as transações de saída ainda
+ * PENDENTES (não bateram com nenhuma Conta do Mês já cadastrada) um padrão de
+ * recorrência: mesmo beneficiário pagando em pelo menos $mesesMinimos meses
+ * diferentes do extrato importado = provavelmente uma conta fixa que o
+ * usuário nunca cadastrou manualmente (ex: ENEL, Claro, mensalidade da
+ * academia). Cria a Conta do Mês sozinho — já marcada Paga, com o valor e
+ * data do pagamento mais recente do grupo — e vincula também as ocorrências
+ * mais antigas do mesmo beneficiário a ela (só de categorização, sem
+ * reprocessar parcelas/vencimento pra cada uma, isso só acontece pra a mais
+ * recente). Pedido explícito do usuário: não quer ficar cadastrando contas
+ * fixas manualmente, o extrato deve reconhecer sozinho.
+ *
+ * Restrito a Pix enviado (tem CPF/CNPJ do beneficiário — sinal forte de
+ * "conta" de verdade). Testado contra dado real: incluir compra no débito
+ * classifica errado lugar visitado com frequência (mercado, Uber, iFood)
+ * como conta fixa, porque esses acumulam mais meses de ocorrência que uma
+ * conta de luz — não tem limite de meses que resolva isso pro débito.
+ */
+function detectar_e_criar_contas_fixas(PDO $pdo, int $familiaId, int $mesesMinimos = 3): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM transacao_importada
+         WHERE familia_id = ? AND status = 'PENDENTE' AND valor < 0
+         ORDER BY data ASC"
+    );
+    $stmt->execute([$familiaId]);
+    $pendentes = $stmt->fetchAll();
+
+    $grupos = [];
+    foreach ($pendentes as $t) {
+        if (!eh_pix_enviado($t['descricao'])) {
+            continue;
+        }
+        $chave = extrair_chave_beneficiario($t['descricao']);
+        if ($chave === '') {
+            continue;
+        }
+        $grupos[$chave][] = $t;
+    }
+
+    $criadas = 0;
+    $transacoesAbsorvidas = 0;
+    foreach ($grupos as $chave => $transacoes) {
+        $meses = array_unique(array_map(fn(array $t): string => substr($t['data'], 0, 7), $transacoes));
+        if (count($meses) < $mesesMinimos) {
+            continue;
+        }
+
+        // Evita duplicar se o usuário já cadastrou manualmente uma conta com
+        // essa palavra-chave, ou se uma leva anterior já criou.
+        $existe = $pdo->prepare('SELECT id FROM conta_mes WHERE familia_id = ? AND identificador_extrato = ?');
+        $existe->execute([$familiaId, $chave]);
+        if ($existe->fetch() !== false) {
+            continue;
+        }
+
+        usort($transacoes, fn(array $a, array $b): int => strcmp($a['data'], $b['data']));
+        $maisRecente = end($transacoes);
+        $nome = mb_convert_case($chave, MB_CASE_TITLE, 'UTF-8');
+
+        $stmt = $pdo->prepare(
+            "INSERT INTO conta_mes (familia_id, nome, categoria, valor, vencimento, tipo, recorrente_mensal, identificador_extrato, status, paga_em)
+             VALUES (?, ?, 'Outros', ?, ?, 'FIXA', 1, ?, 'PAGA', ?)"
+        );
+        $stmt->execute([
+            $familiaId, $nome, abs((float) $maisRecente['valor']), $maisRecente['data'], $chave, $maisRecente['data'],
+        ]);
+        $contaMesId = (int) $pdo->lastInsertId();
+
+        foreach ($transacoes as $t) {
+            $stmt = $pdo->prepare("UPDATE transacao_importada SET status = 'CONFIRMADA', conta_mes_id = ? WHERE id = ?");
+            $stmt->execute([$contaMesId, $t['id']]);
+        }
+
+        $criadas++;
+        $transacoesAbsorvidas += count($transacoes);
+    }
+
+    return ['contas' => $criadas, 'transacoes' => $transacoesAbsorvidas];
 }
 
 function aplicar_recebimento_receita(PDO $pdo, array $receita, float $valor, string $dataRecebimento): void
@@ -252,7 +388,7 @@ function processar_extrato_automatico(PDO $pdo, int $familiaId): array
         if ($t['valor'] < 0) {
             $conta = achar_conta_mes_correspondente($pdo, $familiaId, abs($t['valor']), $t['descricao']);
             if ($conta !== null) {
-                aplicar_pagamento_conta_mes($pdo, $conta, $t['data']);
+                aplicar_pagamento_conta_mes($pdo, $conta, $t['data'], $t['descricao']);
                 $contaMesId = (int) $conta['id'];
                 $status = 'CONFIRMADA';
                 $casadas++;
@@ -273,11 +409,18 @@ function processar_extrato_automatico(PDO $pdo, int $familiaId): array
         );
         $stmt->execute([$familiaId, $t['identificador'], $t['data'], $t['valor'], $t['descricao'], $status, $contaMesId, $receitaId]);
     }
+        $deteccao = detectar_e_criar_contas_fixas($pdo, $familiaId);
         $pdo->commit();
     } catch (Throwable $erro) {
         $pdo->rollBack();
         throw $erro;
     }
 
-    return ['total_no_extrato' => count($transacoes), 'novas' => $novas, 'casadas' => $casadas];
+    return [
+        'total_no_extrato' => count($transacoes),
+        'novas' => $novas,
+        'casadas' => $casadas,
+        'contas_fixas_criadas' => $deteccao['contas'],
+        'transacoes_absorvidas_por_contas_fixas' => $deteccao['transacoes'],
+    ];
 }

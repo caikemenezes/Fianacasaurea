@@ -20,7 +20,10 @@ if ($acao === 'verificar') {
         if (isset($resultado['erro'])) {
             redirecionar('/contas.php?erro=' . urlencode($resultado['erro']));
         }
-        redirecionar("/contas.php?novas={$resultado['novas']}&casadas={$resultado['casadas']}");
+        redirecionar(
+            "/contas.php?novas={$resultado['novas']}&casadas={$resultado['casadas']}"
+            . "&fixas_criadas={$resultado['contas_fixas_criadas']}&fixas_transacoes={$resultado['transacoes_absorvidas_por_contas_fixas']}"
+        );
     } catch (Throwable $erro) {
         redirecionar('/contas.php?erro=' . urlencode($erro->getMessage()));
     }
@@ -37,7 +40,7 @@ if ($acao === 'verificar') {
     $conta = $stmt->fetch();
 
     if ($transacao !== false && $conta !== false) {
-        aplicar_pagamento_conta_mes($pdo, $conta, $transacao['data']);
+        aplicar_pagamento_conta_mes($pdo, $conta, $transacao['data'], $transacao['descricao']);
         $stmt = $pdo->prepare('UPDATE transacao_importada SET status = "CONFIRMADA", conta_mes_id = ? WHERE id = ?');
         $stmt->execute([$contaMesId, $id]);
     }
