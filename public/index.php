@@ -100,7 +100,7 @@ $previsao = $resumo['saldo_previsto_fim_mes'];
       </div>
       <div class="mini-tile">
         <span class="icone-badge"><?= icone('check') ?></span>
-        <span class="mini-tile-texto"><span class="rotulo">Contas pagas</span><span class="valor">R$ <?= number_format($resumo['total_pago'], 2, ',', '.') ?></span></span>
+        <span class="mini-tile-texto"><span class="rotulo">Gastos do mês</span><span class="valor">R$ <?= number_format($resumo['total_pago'], 2, ',', '.') ?></span></span>
       </div>
     </div>
   </div>

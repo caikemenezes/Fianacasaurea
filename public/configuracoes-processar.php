@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../src/auth_guard.php';
 require_once __DIR__ . '/../src/util.php';
+require_once __DIR__ . '/../src/cripto.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     redirecionar('/configuracoes.php');
@@ -49,6 +50,25 @@ if ($acao === 'alterar_senha') {
     $stmt = $pdo->prepare('INSERT INTO usuario (familia_id, nome, email, senha_hash) VALUES (?, ?, ?, ?)');
     $stmt->execute([$familiaId, $nome, $email, hash_senha($senha)]);
     redirecionar('/configuracoes.php?sucesso_convite=' . urlencode("Conta criada para {$nome}."));
+} elseif ($acao === 'salvar_extrato_gmail') {
+    $imapEmail = trim((string) ($_POST['imap_email'] ?? ''));
+    $imapSenhaApp = (string) ($_POST['imap_senha_app'] ?? '');
+
+    if ($imapEmail === '') {
+        redirecionar('/configuracoes.php?erro_extrato=' . urlencode('Preencha o e-mail do Gmail.'));
+    }
+
+    if ($imapSenhaApp !== '') {
+        // Senha nova informada: atualiza e-mail + senha cifrada juntos.
+        $stmt = $pdo->prepare('UPDATE familia SET imap_email = ?, imap_senha_app_cifrada = ? WHERE id = ?');
+        $stmt->execute([$imapEmail, cifrar_segredo($imapSenhaApp), $familiaId]);
+    } else {
+        // Campo de senha em branco: mantém a senha já cadastrada, só atualiza o e-mail.
+        $stmt = $pdo->prepare('UPDATE familia SET imap_email = ? WHERE id = ?');
+        $stmt->execute([$imapEmail, $familiaId]);
+    }
+
+    redirecionar('/configuracoes.php?sucesso_extrato=' . urlencode('Credenciais do Gmail salvas.'));
 }
 
 redirecionar('/configuracoes.php');

@@ -54,7 +54,6 @@ function resumo_do_mes(PDO $pdo, int $familiaId, string $mesReferencia): array
     $stmt = $pdo->prepare(
         'SELECT
             COALESCE(SUM(valor), 0) AS total_contas,
-            COALESCE(SUM(CASE WHEN status = "PAGA" THEN valor ELSE 0 END), 0) AS total_pago,
             COUNT(*) AS qtd_contas,
             COALESCE(SUM(CASE WHEN status = "PENDENTE" AND vencimento >= CURDATE() THEN 1 ELSE 0 END), 0) AS qtd_pendentes,
             COALESCE(SUM(CASE WHEN status = "ATRASADA" OR (status = "PENDENTE" AND vencimento < CURDATE()) THEN 1 ELSE 0 END), 0) AS qtd_atrasadas,
@@ -63,6 +62,19 @@ function resumo_do_mes(PDO $pdo, int $familiaId, string $mesReferencia): array
     );
     $stmt->execute([$familiaId, $mesReferencia]);
     $contas = $stmt->fetch();
+
+    // "Gastos do mês": tudo que já saiu de fato da conta neste mês, pela data
+    // real do pagamento (paga_em) — não pelo status "PAGA" nem pelo
+    // vencimento. Contas parceladas (financiamento) quase nunca mudam de
+    // status PENDENTE, só avançam a parcela — por isso não davam pra contar
+    // olhando só status="PAGA" (achado numa correção pedida pelo usuário,
+    // depois de ver "Contas pagas" no Dashboard sem refletir parcela paga).
+    $stmt = $pdo->prepare(
+        'SELECT COALESCE(SUM(CASE WHEN numero_parcelas IS NOT NULL THEN COALESCE(valor_parcela, 0) ELSE valor END), 0) AS total_pago
+         FROM conta_mes WHERE familia_id = ? AND paga_em IS NOT NULL AND DATE_FORMAT(paga_em, "%Y-%m") = ?'
+    );
+    $stmt->execute([$familiaId, $mesReferencia]);
+    $totalPagoLinha = $stmt->fetch();
 
     $stmt = $pdo->prepare('SELECT COALESCE(SUM(valor_guardado), 0) AS total FROM meta WHERE familia_id = ?');
     $stmt->execute([$familiaId]);
@@ -83,7 +95,7 @@ function resumo_do_mes(PDO $pdo, int $familiaId, string $mesReferencia): array
     $rendaPrevista = (float) $receitas['renda_prevista'];
     $rendaRecebida = (float) $receitas['renda_recebida'];
     $totalContas = (float) $contas['total_contas'];
-    $totalPago = (float) $contas['total_pago'];
+    $totalPago = (float) $totalPagoLinha['total_pago'];
 
     return [
         'renda_prevista' => $rendaPrevista,
@@ -217,8 +229,10 @@ function serie_gasto_acumulado(PDO $pdo, int $familiaId, string $mesReferencia):
     $ultimoDia = $ehMesAtual ? (int) $hoje->format('j') : $diasNoMes;
 
     $stmt = $pdo->prepare(
-        'SELECT DAY(paga_em) AS dia, SUM(valor) AS valor FROM conta_mes
-         WHERE familia_id = ? AND status = "PAGA" AND DATE_FORMAT(paga_em, "%Y-%m") = ?
+        'SELECT DAY(paga_em) AS dia,
+            SUM(CASE WHEN numero_parcelas IS NOT NULL THEN COALESCE(valor_parcela, 0) ELSE valor END) AS valor
+         FROM conta_mes
+         WHERE familia_id = ? AND paga_em IS NOT NULL AND DATE_FORMAT(paga_em, "%Y-%m") = ?
          GROUP BY DAY(paga_em)'
     );
     $stmt->execute([$familiaId, $mesReferencia]);

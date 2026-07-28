@@ -17,8 +17,8 @@ if ($acao === 'criar') {
     $numeroParcelas = texto_ou_null($_POST['numero_parcelas'] ?? null);
 
     $stmt = $pdo->prepare(
-        'INSERT INTO conta_mes (familia_id, nome, categoria, subcategoria, valor, vencimento, forma_pagamento, conta_bancaria, tipo, recorrente_mensal, numero_parcelas, valor_parcela, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO conta_mes (familia_id, nome, categoria, subcategoria, valor, vencimento, forma_pagamento, conta_bancaria, tipo, recorrente_mensal, numero_parcelas, identificador_extrato, valor_parcela, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $familiaId,
@@ -32,6 +32,7 @@ if ($acao === 'criar') {
         ($_POST['tipo'] ?? '') === 'VARIAVEL' ? 'VARIAVEL' : 'FIXA',
         isset($_POST['recorrente_mensal']) ? 1 : 0,
         $numeroParcelas !== null ? (int) $numeroParcelas : null,
+        texto_ou_null($_POST['identificador_extrato'] ?? null),
         parse_valor_ou_null($_POST['valor_parcela'] ?? null),
         texto_ou_null($_POST['observacoes'] ?? null),
     ]);
@@ -44,7 +45,7 @@ if ($acao === 'criar') {
     // total financiado (não muda por parcela), só valor_parcela pode ser
     // corrigido direto (ex: parcela renegociada).
     $id = (int) $_POST['id'];
-    $stmt = $pdo->prepare('SELECT parcelas_pagas, vencimento FROM conta_mes WHERE id = ? AND familia_id = ?');
+    $stmt = $pdo->prepare('SELECT parcelas_pagas, vencimento, paga_em FROM conta_mes WHERE id = ? AND familia_id = ?');
     $stmt->execute([$id, $familiaId]);
     $atual = $stmt->fetch();
 
@@ -55,9 +56,14 @@ if ($acao === 'criar') {
             ? somar_meses($atual['vencimento'], $delta)
             : (string) $_POST['vencimento'];
         $novoValorParcela = parse_valor_ou_null($_POST['valor_parcela'] ?? null);
+        // Cada parcela nova marcada como paga registra a data de hoje em
+        // paga_em — é o que o Dashboard usa pra somar "Gastos do mês" (ver
+        // resumo_do_mes em src/dashboard.php), já que uma conta parcelada
+        // quase nunca muda de status PENDENTE, só avança a parcela.
+        $pagaEm = $delta > 0 ? date('Y-m-d') : $atual['paga_em'];
 
-        $stmt = $pdo->prepare('UPDATE conta_mes SET parcelas_pagas = ?, vencimento = ?, valor_parcela = ? WHERE id = ? AND familia_id = ?');
-        $stmt->execute([$novasParcelasPagas, $novoVencimento, $novoValorParcela, $id, $familiaId]);
+        $stmt = $pdo->prepare('UPDATE conta_mes SET parcelas_pagas = ?, vencimento = ?, valor_parcela = ?, paga_em = ? WHERE id = ? AND familia_id = ?');
+        $stmt->execute([$novasParcelasPagas, $novoVencimento, $novoValorParcela, $pagaEm, $id, $familiaId]);
     }
 } elseif ($acao === 'marcar_paga') {
     // Ciclo manual completo: pendente -> atrasada -> paga -> pendente -> ...

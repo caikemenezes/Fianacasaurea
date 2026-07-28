@@ -15,8 +15,8 @@ $acao = $_POST['acao'] ?? '';
 
 if ($acao === 'criar') {
     $stmt = $pdo->prepare(
-        'INSERT INTO receita (familia_id, nome, tipo, valor_previsto, data_prevista, categoria, recorrente, conta_bancaria, observacao)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO receita (familia_id, nome, tipo, valor_previsto, data_prevista, categoria, identificador_extrato, recorrente, conta_bancaria, observacao)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $familiaId,
@@ -25,6 +25,7 @@ if ($acao === 'criar') {
         parse_valor($_POST['valor_previsto'] ?? null),
         (string) $_POST['data_prevista'],
         texto_ou_null($_POST['categoria'] ?? null),
+        texto_ou_null($_POST['identificador_extrato'] ?? null),
         isset($_POST['recorrente']) ? 1 : 0,
         texto_ou_null($_POST['conta_bancaria'] ?? null),
         texto_ou_null($_POST['observacao'] ?? null),

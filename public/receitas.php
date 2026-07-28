@@ -43,6 +43,7 @@ layout_rodape($usuario_atual);
     <input name="valor_previsto" placeholder="Valor previsto" type="text" inputmode="decimal" data-moeda required class="campo">
     <input name="data_prevista" type="date" required class="campo">
     <input name="categoria" placeholder="Categoria (opcional)" class="campo">
+    <input name="identificador_extrato" placeholder="Palavra-chave no extrato (opcional, ex: nome de quem paga)" class="campo">
     <input name="conta_bancaria" placeholder="Conta bancária (opcional)" class="campo">
     <input name="observacao" placeholder="Observação (opcional)" class="campo">
     <label class="campo-checkbox"><input type="checkbox" name="recorrente"> Recorrente</label>

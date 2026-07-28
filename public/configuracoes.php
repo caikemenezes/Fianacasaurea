@@ -13,10 +13,16 @@ $stmt = $pdo->prepare('SELECT id, nome, email, criado_em FROM usuario WHERE fami
 $stmt->execute([$familiaId]);
 $membrosFamilia = $stmt->fetchAll();
 
+$stmt = $pdo->prepare('SELECT imap_email FROM familia WHERE id = ?');
+$stmt->execute([$familiaId]);
+$imapEmailAtual = $stmt->fetch()['imap_email'];
+
 $erroSenha = $_GET['erro_senha'] ?? null;
 $sucessoSenha = $_GET['sucesso_senha'] ?? null;
 $erroConvite = $_GET['erro_convite'] ?? null;
 $sucessoConvite = $_GET['sucesso_convite'] ?? null;
+$erroExtrato = $_GET['erro_extrato'] ?? null;
+$sucessoExtrato = $_GET['sucesso_extrato'] ?? null;
 
 layout_topo($usuario_atual, '', 'Configurações');
 layout_rodape($usuario_atual);
@@ -74,6 +80,27 @@ layout_rodape($usuario_atual);
       <input name="email" type="email" placeholder="E-mail" required class="campo">
       <input name="senha" type="password" placeholder="Senha inicial (mín. 8 caracteres)" required minlength="8" class="campo">
       <button type="submit" class="botao">Criar acesso</button>
+    </form>
+  </div>
+
+  <div class="cartao pilha-pequena">
+    <?= info_icone('E-mail e senha de app do Gmail da SUA família, usados só pelo botão "Verificar extrato agora" em Contas do Mês. Cada família tem a própria credencial — a sua não é vista nem usada por outras famílias no sistema. A senha fica cifrada no banco, nunca em texto puro. É uma "Senha de app" do Google (myaccount.google.com/apppasswords), não a senha normal da conta — exige verificação em duas etapas ativada.') ?>
+    <h2 class="cartao-titulo">Extrato automático (Gmail)</h2>
+    <p class="texto-suave" style="font-size:0.8rem;margin:0">
+      <?= $imapEmailAtual !== null && $imapEmailAtual !== ''
+        ? 'Configurado: ' . htmlspecialchars($imapEmailAtual, ENT_QUOTES, 'UTF-8')
+        : 'Ainda não configurado — o botão "Verificar extrato" não funciona até isso ser preenchido.' ?>
+    </p>
+
+    <?php if ($erroExtrato): ?><p class="texto-suave" style="color:var(--perigo)"><?= htmlspecialchars($erroExtrato, ENT_QUOTES, 'UTF-8') ?></p><?php endif; ?>
+    <?php if ($sucessoExtrato): ?><p class="texto-suave" style="color:var(--sucesso)"><?= htmlspecialchars($sucessoExtrato, ENT_QUOTES, 'UTF-8') ?></p><?php endif; ?>
+
+    <form method="post" action="/configuracoes-processar.php" class="form-grade">
+      <?= csrf_campo_oculto($usuario_atual) ?>
+      <input type="hidden" name="acao" value="salvar_extrato_gmail">
+      <input name="imap_email" type="email" placeholder="E-mail do Gmail" required value="<?= htmlspecialchars((string) $imapEmailAtual, ENT_QUOTES, 'UTF-8') ?>" class="campo">
+      <input name="imap_senha_app" type="password" placeholder="<?= $imapEmailAtual !== null && $imapEmailAtual !== '' ? 'Senha de app (deixe em branco pra manter a atual)' : 'Senha de app' ?>" class="campo">
+      <button type="submit" class="botao">Salvar</button>
     </form>
   </div>
 </div>

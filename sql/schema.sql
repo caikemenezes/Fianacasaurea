@@ -5,6 +5,12 @@
 
 CREATE TABLE IF NOT EXISTS familia (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    -- Credenciais do Gmail pro extrato automático (Contas do Mês > Verificar
+    -- extrato), uma por família — cada família puxa o extrato da própria
+    -- conta bancária, sem misturar com a de outra família. Senha de app
+    -- guardada cifrada (ver src/cripto.php), nunca em texto puro.
+    imap_email VARCHAR(190) NULL,
+    imap_senha_app_cifrada VARCHAR(500) NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -74,6 +80,7 @@ CREATE TABLE receita (
     data_prevista DATE NOT NULL,
     data_recebimento DATE NULL,
     categoria VARCHAR(60) NULL,
+    identificador_extrato VARCHAR(160) NULL,
     recorrente TINYINT(1) NOT NULL DEFAULT 0,
     conta_bancaria VARCHAR(120) NULL,
     status ENUM('PREVISTO','RECEBIDO') NOT NULL DEFAULT 'PREVISTO',
@@ -96,6 +103,7 @@ CREATE TABLE conta_mes (
     tipo ENUM('FIXA','VARIAVEL') NOT NULL DEFAULT 'FIXA',
     recorrente_mensal TINYINT(1) NOT NULL DEFAULT 1,
     numero_parcelas INT NULL,
+    identificador_extrato VARCHAR(160) NULL,
     valor_parcela DECIMAL(12,2) NULL,
     parcelas_pagas INT NOT NULL DEFAULT 0,
     status ENUM('PENDENTE','ATRASADA','PAGA') NOT NULL DEFAULT 'PENDENTE',
@@ -205,4 +213,24 @@ CREATE TABLE investimento (
     observacoes VARCHAR(500) NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_investimento_familia FOREIGN KEY (familia_id) REFERENCES familia (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Extrato bancário importado automaticamente do Gmail (CSV anexado no e-mail
+-- "Extrato da sua conta do Nubank") — ver sql/migracoes/003_extrato_automatico.sql
+-- pra decisão de design completa.
+CREATE TABLE transacao_importada (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    familia_id INT NOT NULL,
+    identificador_externo VARCHAR(64) NOT NULL,
+    data DATE NOT NULL,
+    valor DECIMAL(12,2) NOT NULL,
+    descricao VARCHAR(500) NOT NULL,
+    status ENUM('PENDENTE','CONFIRMADA','IGNORADA') NOT NULL DEFAULT 'PENDENTE',
+    conta_mes_id INT NULL,
+    receita_id INT NULL,
+    criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_transacao_familia_identificador (familia_id, identificador_externo),
+    CONSTRAINT fk_transacao_familia FOREIGN KEY (familia_id) REFERENCES familia (id) ON DELETE CASCADE,
+    CONSTRAINT fk_transacao_conta_mes FOREIGN KEY (conta_mes_id) REFERENCES conta_mes (id) ON DELETE SET NULL,
+    CONSTRAINT fk_transacao_receita FOREIGN KEY (receita_id) REFERENCES receita (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
