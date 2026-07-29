@@ -46,7 +46,7 @@ layout_rodape($usuario_atual);
 
   <form method="post" action="/dividas-processar.php" class="cartao form-grade">
     <?= csrf_campo_oculto($usuario_atual) ?>
-    <?= info_icone('Cadastre aqui uma dívida (empréstimo, financiamento, cartão, parcelamento...). Clique no status na tabela pra ir alternando entre pendente, atrasada e paga.') ?>
+    <?= info_icone('Cadastre aqui uma dívida (empréstimo, financiamento, cartão, parcelamento...). Se o credor oferecer desconto pra pagar à vista, preencha "Valor com desconto" — a tabela mostra quanto você economizaria. Clique no status na tabela pra ir alternando entre pendente, atrasada e paga.') ?>
     <input type="hidden" name="acao" value="criar">
     <input name="nome" placeholder="Nome da dívida" required class="campo">
     <input name="credor" placeholder="Credor" required class="campo">
@@ -61,6 +61,7 @@ layout_rodape($usuario_atual);
     <input name="valor_parcela" placeholder="Valor da parcela (opcional)" type="text" inputmode="decimal" data-moeda class="campo">
     <input name="vencimento" type="date" class="campo">
     <input name="identificador_extrato" placeholder="Palavra-chave no extrato (opcional)" class="campo">
+    <input name="valor_negociado" placeholder="Valor com desconto oferecido (opcional)" type="text" inputmode="decimal" data-moeda class="campo">
     <select name="prioridade" class="campo">
       <option value="URGENTE">Urgente</option>
       <option value="ALTA">Alta</option>
@@ -81,7 +82,7 @@ layout_rodape($usuario_atual);
 
   <div class="tabela-wrap">
     <table class="tabela">
-      <thead><tr><th>Nome</th><th>Credor</th><th>Parcelas pagas</th><th>Valor original</th><th>Valor atual</th><th>Valor da parcela</th><th>Próximo vencimento</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Credor</th><th>Parcelas pagas</th><th>Valor original</th><th>Valor atual</th><th>Valor da parcela</th><th>Valor com desconto</th><th>Próximo vencimento</th><th>Status</th><th></th></tr></thead>
       <tbody>
         <?php foreach ($dividas as $divida):
           $status = $divida['status_exibido'];
@@ -104,6 +105,14 @@ layout_rodape($usuario_atual);
             </td>
             <td><input form="<?= $formId ?>" name="valor_atual" type="text" inputmode="decimal" data-moeda value="<?= formatar_valor_input((float) $divida['valor_atual']) ?>" class="campo campo-tabela" style="width:7rem"></td>
             <td><input form="<?= $formId ?>" name="valor_parcela" type="text" inputmode="decimal" data-moeda value="<?= $divida['valor_parcela'] !== null ? formatar_valor_input((float) $divida['valor_parcela']) : '' ?>" class="campo campo-tabela" style="width:7rem"></td>
+            <td>
+              <input form="<?= $formId ?>" name="valor_negociado" placeholder="Sem desconto" type="text" inputmode="decimal" data-moeda value="<?= $divida['valor_negociado'] !== null ? formatar_valor_input((float) $divida['valor_negociado']) : '' ?>" class="campo campo-tabela" style="width:7rem">
+              <?php if ($divida['valor_negociado'] !== null && (float) $divida['valor_negociado'] < (float) $divida['valor_atual']): ?>
+                <div class="texto-suave" style="font-size:0.75rem;margin-top:0.15rem;color:var(--sucesso)">
+                  economiza <?= formatar_moeda((float) $divida['valor_atual'] - (float) $divida['valor_negociado']) ?>
+                </div>
+              <?php endif; ?>
+            </td>
             <td><input form="<?= $formId ?>" name="vencimento" type="date" value="<?= $divida['vencimento'] ?? '' ?>" class="campo campo-tabela"></td>
             <td>
               <form method="post" action="/dividas-processar.php" style="display:inline">
@@ -128,13 +137,13 @@ layout_rodape($usuario_atual);
           </tr>
         <?php endforeach; ?>
         <?php if (count($dividas) === 0): ?>
-          <tr><td colspan="9" class="tabela-vazia">Nenhuma dívida cadastrada.</td></tr>
+          <tr><td colspan="10" class="tabela-vazia">Nenhuma dívida cadastrada.</td></tr>
         <?php endif; ?>
       </tbody>
     </table>
   </div>
   <p class="texto-suave" style="font-size:0.8rem">
-    Edite nome, credor, parcelas pagas, valor atual, valor da parcela ou vencimento direto na tabela — salva sozinho ao sair do campo, sem precisar de um botão "Salvar".
+    Edite nome, credor, parcelas pagas, valor atual, valor da parcela, valor com desconto ou vencimento direto na tabela — salva sozinho ao sair do campo, sem precisar de um botão "Salvar".
   </p>
 </div>
 

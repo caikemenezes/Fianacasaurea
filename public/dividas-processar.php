@@ -18,8 +18,8 @@ if ($acao === 'criar') {
     $numeroParcelas = texto_ou_null($_POST['numero_parcelas'] ?? null);
 
     $stmt = $pdo->prepare(
-        'INSERT INTO divida (familia_id, nome, credor, tipo, valor_original, valor_atual, numero_parcelas, valor_parcela, vencimento, prioridade, possibilidade_negociacao, identificador_extrato)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO divida (familia_id, nome, credor, tipo, valor_original, valor_atual, numero_parcelas, valor_parcela, vencimento, prioridade, possibilidade_negociacao, valor_negociado, identificador_extrato)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $stmt->execute([
         $familiaId,
@@ -33,6 +33,7 @@ if ($acao === 'criar') {
         data_ou_null($_POST['vencimento'] ?? null),
         in_array($_POST['prioridade'] ?? '', ['URGENTE', 'ALTA', 'MEDIA', 'BAIXA'], true) ? $_POST['prioridade'] : 'MEDIA',
         isset($_POST['possibilidade_negociacao']) ? 1 : 0,
+        parse_valor_ou_null($_POST['valor_negociado'] ?? null),
         texto_ou_null($_POST['identificador_extrato'] ?? null),
     ]);
 } elseif ($acao === 'alternar_status') {
@@ -83,7 +84,7 @@ if ($acao === 'criar') {
         }
 
         $stmt = $pdo->prepare(
-            'UPDATE divida SET nome = ?, credor = ?, parcelas_pagas = ?, valor_atual = ?, valor_parcela = ?, vencimento = ?
+            'UPDATE divida SET nome = ?, credor = ?, parcelas_pagas = ?, valor_atual = ?, valor_parcela = ?, vencimento = ?, valor_negociado = ?
              WHERE id = ? AND familia_id = ?'
         );
         $stmt->execute([
@@ -93,6 +94,7 @@ if ($acao === 'criar') {
             $novoValorAtual,
             $novoValorParcela,
             $novoVencimento,
+            parse_valor_ou_null($_POST['valor_negociado'] ?? null),
             $id,
             $familiaId,
         ]);

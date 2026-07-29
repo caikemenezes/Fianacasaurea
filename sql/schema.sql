@@ -199,6 +199,10 @@ CREATE TABLE divida (
     status ENUM('EM_DIA','ATRASADA','QUITADA') NOT NULL DEFAULT 'EM_DIA',
     prioridade ENUM('URGENTE','ALTA','MEDIA','BAIXA') NOT NULL DEFAULT 'MEDIA',
     possibilidade_negociacao TINYINT(1) NOT NULL DEFAULT 0,
+    -- Valor que o credor ofereceu pra quitar a dívida à vista, com desconto
+    -- — separado de valor_atual (o que é devido de verdade), pra comparar os
+    -- dois e decidir se vale a pena pagar à vista.
+    valor_negociado DECIMAL(12,2) NULL,
     observacoes VARCHAR(500) NULL,
     identificador_extrato VARCHAR(160) NULL,
     criado_em DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
