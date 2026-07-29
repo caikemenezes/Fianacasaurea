@@ -45,20 +45,66 @@
     'Investimentos': 'Aporte mensal planejado de cada investimento cadastrado.',
   };
 
-  var estado = {
-    renda: rendaInicial,
-    horizonte: horizontePadrao,
-    itens: itensIniciais.map(function (item) {
+  // Simulação persistida no navegador (localStorage) — sem isso, sair da
+  // página e voltar perdia tudo que a pessoa tinha ajustado. Só reseta de
+  // verdade quando clica em "Restaurar valores sugeridos" (vira a "nova
+  // simulação" pedida pelo usuário). Cada família/navegador guarda a própria
+  // (não é sincronizado com o banco, é só local — se abrir em outro
+  // computador não vem junto).
+  var CHAVE_LOCALSTORAGE = 'aurea-simulador-estado';
+
+  function carregarEstadoLocal() {
+    try {
+      var bruto = window.localStorage.getItem(CHAVE_LOCALSTORAGE);
+      return bruto ? JSON.parse(bruto) : null;
+    } catch (erro) {
+      return null; // localStorage indisponível (ex: navegação privada) — segue sem persistir
+    }
+  }
+
+  function salvarEstadoLocal() {
+    try {
+      window.localStorage.setItem(CHAVE_LOCALSTORAGE, JSON.stringify(estado));
+    } catch (erro) {
+      // sem espaço ou localStorage bloqueado — a simulação continua funcionando,
+      // só não persiste entre visitas
+    }
+  }
+
+  function itensPadrao(horizonte) {
+    return itensIniciais.map(function (item) {
       return Object.assign({}, item, {
         valor: item.valorSugerido,
         incluido: item.valorSugerido > 0,
         parcelas: 1,
-        repeticoes: mesesNoPeriodo(horizontePadrao),
+        repeticoes: mesesNoPeriodo(horizonte),
       });
-    }),
-    categoriasPersonalizadas: [],
-    calculado: false,
-  };
+    });
+  }
+
+  var estadoSalvo = carregarEstadoLocal();
+  var estado;
+  if (estadoSalvo && estadoSalvo.itens) {
+    // Restaura o que a pessoa tinha ajustado, e adiciona (sem sobrescrever)
+    // qualquer conta/dívida/meta cadastrada depois da última simulação salva.
+    var idsSalvos = estadoSalvo.itens.map(function (i) { return i.id; });
+    var itensNovos = itensPadrao(estadoSalvo.horizonte || horizontePadrao).filter(function (i) { return idsSalvos.indexOf(i.id) === -1; });
+    estado = {
+      renda: typeof estadoSalvo.renda === 'number' ? estadoSalvo.renda : rendaInicial,
+      horizonte: estadoSalvo.horizonte || horizontePadrao,
+      itens: estadoSalvo.itens.concat(itensNovos),
+      categoriasPersonalizadas: estadoSalvo.categoriasPersonalizadas || [],
+      calculado: !!estadoSalvo.calculado,
+    };
+  } else {
+    estado = {
+      renda: rendaInicial,
+      horizonte: horizontePadrao,
+      itens: itensPadrao(horizontePadrao),
+      categoriasPersonalizadas: [],
+      calculado: false,
+    };
+  }
 
   function gerarId(prefixo) {
     return prefixo + '-' + Math.random().toString(36).slice(2, 10);
@@ -281,7 +327,7 @@
       + renderBarraAlocacao()
       + '</div>'
 
-      + '<button type="button" data-acao="restaurar" class="botao botao-pequeno" style="align-self:flex-start">Restaurar valores sugeridos</button>'
+      + '<button type="button" data-acao="restaurar" class="botao botao-pequeno" style="align-self:flex-start" title="Volta tudo pros valores sugeridos e apaga os projetos personalizados — como começar uma simulação nova">Começar nova simulação</button>'
 
       + '<div class="cartao cartao-cta pilha-pequena">'
       + '<div><p class="cartao-cta-titulo">Simular um projeto</p>'
@@ -301,6 +347,7 @@
       + '</div>';
 
     raiz.innerHTML = html;
+    salvarEstadoLocal();
   }
 
   raiz.addEventListener('input', function (e) {
