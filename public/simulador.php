@@ -23,6 +23,21 @@ foreach ($stmt->fetchAll() as $c) {
     $itens[] = ['id' => 'conta-' . $c['id'], 'nome' => $c['nome'], 'categoria' => 'Contas do Mês', 'valorSugerido' => (float) $c['valor']];
 }
 
+// Todas as contas fixas cadastradas (independente de status/mês de
+// vencimento) — não entram na simulação de cara (só as pendentes deste mês
+// entram, acima), ficam disponíveis pro botão "Trazer contas fixas do mês"
+// no card, pra projetar todas as recorrentes sem precisar cadastrar cada
+// mês na mão.
+$stmt = $pdo->prepare(
+    'SELECT id, nome, CASE WHEN numero_parcelas IS NOT NULL THEN COALESCE(valor_parcela, 0) ELSE valor END AS valor_mensal
+     FROM conta_mes WHERE familia_id = ? ORDER BY nome ASC'
+);
+$stmt->execute([$familiaId]);
+$contasFixasDisponiveis = [];
+foreach ($stmt->fetchAll() as $c) {
+    $contasFixasDisponiveis[] = ['id' => 'conta-' . $c['id'], 'nome' => $c['nome'], 'categoria' => 'Contas do Mês', 'valorSugerido' => (float) $c['valor_mensal']];
+}
+
 $stmt = $pdo->prepare('SELECT id, nome, valor_parcela, numero_parcelas, parcelas_pagas FROM divida WHERE familia_id = ? AND status != "QUITADA"');
 $stmt->execute([$familiaId]);
 foreach ($stmt->fetchAll() as $d) {
@@ -68,7 +83,7 @@ layout_rodape($usuario_atual);
     <p class="pagina-subtitulo">Estime uma renda e veja o que consegue fazer com ela — ajuste os valores abaixo para testar cenários.</p>
   </div>
 
-  <div id="simulador-raiz" data-renda-inicial="<?= $rendaInicial ?>" data-itens='<?= htmlspecialchars(json_encode($itens, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>'>
+  <div id="simulador-raiz" data-mes-atual="<?= $mesAtual ?>" data-renda-inicial="<?= $rendaInicial ?>" data-itens='<?= htmlspecialchars(json_encode($itens, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>' data-contas-fixas='<?= htmlspecialchars(json_encode($contasFixasDisponiveis, JSON_UNESCAPED_UNICODE), ENT_QUOTES, 'UTF-8') ?>'>
     <p class="texto-suave">Carregando simulador…</p>
   </div>
 </div>
