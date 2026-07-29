@@ -16,8 +16,25 @@ const FILTROS_CONTA = [
     'todas' => 'Todas', 'pendente' => 'Pendentes', 'atrasada' => 'Atrasadas', 'paga' => 'Pagas',
 ];
 
+// Planilha de orçamento por categoria — grupos e itens fixos (não
+// cadastráveis pelo usuário, só o valor de cada um é editável). Pedido pelo
+// usuário: "eu tenho água, todo mês pago tantos de água, já tá reservado".
+const GRUPOS_ORCAMENTO = [
+    ['emoji' => '🏠', 'nome' => 'Casa', 'itens' => ['Água', 'Luz', 'Gás', 'Internet', 'Condomínio', 'IPTU']],
+    ['emoji' => '👨‍👩‍👧', 'nome' => 'Família', 'itens' => ['Alimentação', 'Saúde', 'Filhos', 'Educação', 'Lazer']],
+    ['emoji' => '🚗', 'nome' => 'Mobilidade', 'itens' => ['Carro', 'Combustível', 'Seguro', 'Transporte']],
+    ['emoji' => '💼', 'nome' => 'Profissional', 'itens' => ['Cursos', 'Ferramentas', 'Softwares', 'Equipamentos']],
+    ['emoji' => '📈', 'nome' => 'Patrimônio', 'itens' => ['Investimentos', 'Reserva de emergência', 'Reforma da casa', 'Metas financeiras']],
+    ['emoji' => '💳', 'nome' => 'Financeiro', 'itens' => ['Cartões', 'Empréstimos', 'Receitas', 'Contas a pagar', 'Contas a receber']],
+];
+
 $pdo = conexao_banco();
 $familiaId = (int) $usuario_atual['familia_id'];
+
+$stmt = $pdo->prepare('SELECT subcategoria, valor_reservado FROM orcamento_item WHERE familia_id = ?');
+$stmt->execute([$familiaId]);
+$valoresOrcamento = array_column($stmt->fetchAll(), 'valor_reservado', 'subcategoria');
+$totalOrcamento = array_sum($valoresOrcamento);
 
 $filtroAtivo = array_key_exists($_GET['status'] ?? '', FILTROS_CONTA) ? $_GET['status'] : 'todas';
 
@@ -244,10 +261,55 @@ layout_rodape($usuario_atual);
     </table>
   </div>
 
+  <?php foreach (GRUPOS_ORCAMENTO as $grupo): foreach ($grupo['itens'] as $item): $formId = 'orcamento-form-' . md5($item); ?>
+    <form id="<?= $formId ?>" method="post" action="/contas-processar.php" style="display:none">
+      <?= csrf_campo_oculto($usuario_atual) ?>
+      <input type="hidden" name="acao" value="salvar_orcamento_item">
+      <input type="hidden" name="subcategoria" value="<?= htmlspecialchars($item, ENT_QUOTES, 'UTF-8') ?>">
+    </form>
+  <?php endforeach; endforeach; ?>
+
+  <details class="cartao pilha-pequena secao-recolhivel" id="secao-orcamento-categoria">
+    <summary>Orçamento por categoria <strong style="color:var(--dourado-1)"><?= formatar_moeda($totalOrcamento) ?></strong></summary>
+    <?= info_icone('Quanto você reserva por mês pra cada categoria — não são contas cadastradas com vencimento, é só um valor de planejamento (ex: "água = R$300/mês reservado"). Edita direto na tabela, salva sozinho ao sair do campo.') ?>
+
+    <div class="tabela-wrap">
+      <table class="tabela">
+        <thead><tr><th>Categoria</th><th>Valor reservado por mês</th></tr></thead>
+        <tbody>
+          <?php foreach (GRUPOS_ORCAMENTO as $grupo):
+            $subtotalGrupo = array_sum(array_map(fn($item) => (float) ($valoresOrcamento[$item] ?? 0), $grupo['itens']));
+          ?>
+            <tr style="background:rgba(255,255,255,0.03)">
+              <td colspan="2" style="font-weight:600"><?= $grupo['emoji'] ?> <?= htmlspecialchars($grupo['nome'], ENT_QUOTES, 'UTF-8') ?>
+                <span class="texto-suave" style="font-weight:400;float:right"><?= formatar_moeda($subtotalGrupo) ?></span>
+              </td>
+            </tr>
+            <?php foreach ($grupo['itens'] as $item): $formId = 'orcamento-form-' . md5($item); ?>
+              <tr>
+                <td class="texto-suave" style="padding-left:1.75rem"><?= htmlspecialchars($item, ENT_QUOTES, 'UTF-8') ?></td>
+                <td>
+                  <input form="<?= $formId ?>" name="valor" type="text" inputmode="decimal" data-moeda
+                    value="<?= formatar_valor_input((float) ($valoresOrcamento[$item] ?? 0)) ?>" class="campo campo-tabela" style="width:8rem">
+                </td>
+              </tr>
+            <?php endforeach; ?>
+          <?php endforeach; ?>
+        </tbody>
+        <tfoot>
+          <tr><td class="texto-suave">Total reservado</td><td><strong><?= formatar_moeda($totalOrcamento) ?></strong></td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </details>
+
   <?php if (count($transacoesPendentes) > 0): ?>
-    <div class="cartao pilha-pequena">
+    <details class="cartao pilha-pequena secao-recolhivel" id="secao-gastos-variaveis-extrato" open>
+      <summary>Gastos variáveis do extrato
+        <?php if ($totalGastosVariaveis > 0): ?><strong style="color:var(--perigo)">-<?= formatar_moeda($totalGastosVariaveis) ?></strong><?php endif; ?>
+        <?php if ($totalRecebimentosVariaveis > 0): ?><strong style="color:var(--sucesso)">+<?= formatar_moeda($totalRecebimentosVariaveis) ?></strong><?php endif; ?>
+      </summary>
       <?= info_icone('Gasto do extrato que não é nenhuma das suas contas fixas cadastradas acima — mercado, Uber, lanche, compras avulsas. Se algum desses for na verdade uma conta fixa que você esqueceu de cadastrar, vincula na conta certa aqui; senão, ignora.') ?>
-      <h2 class="cartao-titulo">Gastos variáveis do extrato</h2>
       <p class="texto-suave" style="font-size:0.8rem;margin:0">Mês: <?= ucfirst(formatar_mes_ano($mesExtrato . '-01')) ?> — mude o mês na seção "Extrato bancário automático" mais abaixo.</p>
 
       <div class="tabela-wrap">
@@ -311,7 +373,7 @@ layout_rodape($usuario_atual);
           </tfoot>
         </table>
       </div>
-    </div>
+    </details>
   <?php endif; ?>
 
   <div class="cartao pilha-pequena">
@@ -348,7 +410,7 @@ layout_rodape($usuario_atual);
     <div class="progresso-trilho"><div class="progresso-barra" style="width: <?= min(100, round(max($saldoEmCaixa, 0) / $maiorValor * 100)) ?>%"></div></div>
   </div>
 
-  <details class="cartao pilha-pequena secao-recolhivel">
+  <details class="cartao pilha-pequena secao-recolhivel" id="secao-extrato-automatico">
     <summary>Extrato bancário automático</summary>
     <?= info_icone('Procura no Gmail todos os e-mails de "Extrato" e lê o CSV anexado do Nubank. Casa automaticamente cada gasto com uma conta já cadastrada (por palavra-chave ou valor) e, se o mesmo beneficiário pagar por Pix em 3 meses ou mais sem bater com nenhuma conta, cria a conta fixa sozinho. Toda entrada de dinheiro que não bater com uma Receita prevista já cadastrada vira uma Receita nova automaticamente (recebida). O que sobrar sem reconhecer aparece em "Gastos variáveis do extrato", pra você vincular manualmente ou ignorar.') ?>
     <form method="post" action="/extrato-processar.php">

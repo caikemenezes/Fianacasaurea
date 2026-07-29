@@ -88,6 +88,14 @@ if ($acao === 'criar') {
 } elseif ($acao === 'excluir') {
     $stmt = $pdo->prepare('DELETE FROM conta_mes WHERE id = ? AND familia_id = ?');
     $stmt->execute([(int) $_POST['id'], $familiaId]);
+} elseif ($acao === 'salvar_orcamento_item') {
+    $subcategoria = (string) ($_POST['subcategoria'] ?? '');
+    $valor = parse_valor($_POST['valor'] ?? null);
+    $stmt = $pdo->prepare(
+        'INSERT INTO orcamento_item (familia_id, subcategoria, valor_reservado) VALUES (?, ?, ?)
+         ON DUPLICATE KEY UPDATE valor_reservado = VALUES(valor_reservado)'
+    );
+    $stmt->execute([$familiaId, $subcategoria, $valor]);
 }
 
 redirecionar('/contas.php');
